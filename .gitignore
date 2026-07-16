@@ -1,0 +1,23 @@
+# 只追踪项目核心文件
+*
+!*/
+!.envrc
+!.gitattributes
+!.gitignore
+!*.kdl
+!*.lock
+!*.md
+!*.nix
+!*.sh
+!.sops.yaml
+!*.yaml
+!hosts/default/hardware-configuration.nix
+# 本地定制文件不入库 (每台机器自己的 hostName/mainUser 等, 类似 secrets 的本地化)
+hosts/default/local.nix
+# secrets/secrets.yaml 提交为"占位文件" (git 追踪, 使 Nix flake 可见)。
+# 接收者: 用 secrets/secrets.template.yaml 重建 → 填真实值 → 用自己的 age 公钥加密,
+# 覆盖工作区后勿提交 (可用 git update-index --assume-unchanged secrets/secrets.yaml 防误提交)。
+.claude/
+doc/
+config.yaml
+mihomo-config.yaml
