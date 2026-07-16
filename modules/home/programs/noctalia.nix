@@ -1,0 +1,86 @@
+# noctalia 配置 —— 壁纸 + 顶栏样式
+{ pkgs, noctalia, mainUser, ... }:
+{
+  home.activation.createWallpaperDir = ''
+    mkdir -p /home/${mainUser}/wallpaper
+    cp -n ${noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default}/share/noctalia/assets/noctalia-wallpaper.png /home/${mainUser}/wallpaper/ || true
+  '';
+
+  xdg.configFile."noctalia/config.toml".text = ''
+    # ============================================================
+    # 壁纸
+    # ============================================================
+    [wallpaper]
+    enabled = true
+    directory = "/home/${mainUser}/wallpaper"
+    fill_color = "#26233a"
+    transition_on_startup = true
+
+    [wallpaper.default]
+    path = "/home/${mainUser}/wallpaper/noctalia-wallpaper.png"
+
+    [wallpaper.automation]
+    enabled = true
+    interval_seconds = 1800
+    order = "random"
+    recursive = true
+
+    # ============================================================
+    # 顶栏 —— 全宽、半透明、悬浮胶囊风格
+    # ============================================================
+    [bar.default]
+    enabled = false
+    position = "top"
+    thickness = 38
+    background_opacity = 0.0
+    border_width = 0.0
+    shadow = false
+    margin_ends = 0
+    margin_edge = 8
+    padding = 12
+    widget_spacing = 4
+    radius = 0
+    concave_edge_corners = false
+
+    # 胶囊默认样式 (所有 widget 统一)
+    capsule = true
+    capsule_fill = "surface"
+    capsule_opacity = 0.65
+    capsule_radius = 10.0
+    capsule_thickness = 0.76
+    capsule_padding = 10
+
+    start = ["launcher", "wallpaper", "workspaces"]
+    center = ["clock"]
+    end = ["media", "tray", "notifications", "clipboard", "network", "bluetooth", "volume", "brightness", "control-center", "session"]
+
+    # ============================================================
+    # 第二顶栏 —— margin 悬浮胶囊风格，Maple Mono NF CN
+    # ============================================================
+    [bar.bar]
+    enabled = true
+    position = "top"
+    thickness = 36
+    background_opacity = 0.0
+    border_width = 0.0
+    shadow = false
+    margin_ends = 14
+    margin_edge = 10
+    scale = 1.1
+    font_family = "Maple Mono NF CN"
+
+    # 胶囊默认样式
+    capsule = true
+    capsule_opacity = 0.79
+    capsule_radius = 80
+    capsule_thickness = 0.95
+    capsule_padding = 10
+    capsule_border = "outline"
+    capsule_foreground = "secondary"
+    panel_overlap = 12
+
+    start = ["launcher", "workspaces", "active_window"]
+    center = ["clock"]
+    end = ["media", "tray", "wallpaper", "volume", "notifications", "session"]
+  '';
+}

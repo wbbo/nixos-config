@@ -1,0 +1,183 @@
+// ====================================================================
+// Niri 配置 —— Noctalia v5 + shorin-niri 方案
+// 参考: https://docs.noctalia.dev/v5/compositor-settings/niri/
+// 子配置文件: binds.kdl(快捷键) / rule.kdl(窗口规则)
+// ====================================================================
+
+prefer-no-csd
+
+// ================ 模块化子配置(参考 shorin-niri) ================
+include "binds.kdl"
+include "rule.kdl"
+
+// ================ 截图路径 ================
+screenshot-path "~/screenshot/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+// ================ 环境变量 ================
+environment {
+    LANG "zh_CN.UTF-8"
+    LC_CTYPE "zh_CN.UTF-8"
+    MOZ_ENABLE_WAYLAND "1"
+    XDG_CURRENT_DESKTOP "niri:sway"
+    XDG_CURRENT_DESKTOP "niri:sway"
+    XDG_SESSION_TYPE "wayland"
+    GDK_BACKEND "wayland"
+    TERMINAL "kitty"
+    TERM "kitty"
+    TERM "kitty"
+    QT_QPA_PLATFORMTHEME "gtk3"
+    QT_IM_MODULE "fcitx"
+    GTK_IM_MODULE "fcitx"
+    XMODIFIERS "@im=fcitx"
+    SDL_IM_MODULE "fcitx"
+    GLFW_IM_MODULE "ibus"
+    INPUT_METHOD "fcitx"
+    QT_QPA_PLATFORM "wayland;xcb"
+}
+
+// ================ 光标 ================
+cursor {
+    xcursor-theme "Bibata-Modern-Ice"
+    xcursor-size 24
+}
+
+// ================ 输入设备 ================
+input {
+    keyboard {
+        xkb { layout "us"; }
+        repeat-delay 250
+        repeat-rate 35
+    }
+    touchpad {
+        tap
+        natural-scroll
+        click-method "clickfinger"
+        accel-profile "adaptive"
+    }
+    mouse { accel-speed 0; accel-profile "flat"; }
+    focus-follows-mouse max-scroll-amount="0%"
+}
+
+// ================ 概览 + 壁纸(noctalia backdrop 提供) ================
+overview {
+    backdrop-color "#26233a"
+    workspace-shadow { off; }
+    zoom 0.5
+}
+
+// ================ 启动项 ================
+spawn-at-startup "noctalia"
+
+// ================ 屏幕盖处理(laptop lid) ================
+switch-events {
+    lid-close { spawn "noctalia" "msg" "session" "lock-and-suspend"; }
+}
+
+// ================ 模糊效果(Niri >= 26.04) ================
+blur {
+    passes 2
+    offset 3.0
+    noise 0.03
+    saturation 1.0
+}
+
+// ================ 布局(参考 shorin-niri) ================
+// 关键: 使用 noctalia-wallpaper layer 方案时，必须设置 transparent 背景
+// 否则 niri 自带背景色会遮挡 Noctalia 的壁纸 layer
+// 参考: https://docs.noctalia.dev/v5/compositor-settings/niri/
+layout {
+    background-color "transparent"
+    gaps 10
+    center-focused-column "never"
+    default-column-width { proportion 0.5; }
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+    focus-ring {
+        width 2
+        active-gradient from="#88d6bbcc" to="#a8cbe2cc" angle=135
+        urgent-color "#ffb4ab"
+    }
+    border { off; }
+    shadow {
+        on
+        softness 20
+        spread 2
+        offset x=-4 y=-4
+        color "rgba(0, 0, 0, 0.7)"
+    }
+}
+
+// ================ 弹簧动画(参考 shorin-niri) ================
+animations {
+    slowdown 0.98114514
+    workspace-switch         { spring damping-ratio=0.82 stiffness=400 epsilon=0.0001; }
+    horizontal-view-movement { spring damping-ratio=0.84 stiffness=400 epsilon=0.0001; }
+    window-open              { spring damping-ratio=1.0 stiffness=1000 epsilon=0.0001; }
+    window-close             { spring damping-ratio=0.8 stiffness=400 epsilon=0.0001; }
+    window-movement          { spring damping-ratio=1.0 stiffness=800 epsilon=0.0001; }
+    window-resize            { spring damping-ratio=0.9 stiffness=500 epsilon=0.0001; }
+    screenshot-ui-open       { duration-ms 300; curve "ease-out-quad"; }
+    overview-open-close      { spring damping-ratio=1.0 stiffness=900 epsilon=0.0001; }
+}
+
+// ================ 工作区 + 窗口/图层规则 ================
+workspace "a" { }
+workspace "b" { }
+workspace "c" { }
+
+// 全局窗口圆角 (Noctalia v5 推荐 20)
+window-rule {
+    geometry-corner-radius 20
+    clip-to-geometry true
+}
+
+// 全局窗口模糊
+window-rule {
+    background-effect {
+        blur true
+        xray false
+    }
+}
+
+// Noctalia 设置窗口浮动
+window-rule {
+    match app-id="dev.noctalia.Noctalia"
+    open-floating true
+    default-column-width { fixed 1080; }
+    default-window-height { fixed 920; }
+}
+
+// Noctalia 面板/通知/dock/OSD 图层模糊
+layer-rule {
+    match namespace="^noctalia-(bar-[^\"]+|notification|dock|panel|attached-panel|osd)$"
+    background-effect {
+        xray false
+    }
+}
+
+// Noctalia 窗口切换器模糊
+layer-rule {
+    match namespace="noctalia-window-switcher"
+    background-effect {
+        blur true
+        xray false
+    }
+}
+
+// Noctalia 壁纸背景(backdrop layer)
+layer-rule {
+    match namespace="^noctalia-wallpaper"
+    place-within-backdrop true
+}
+
+debug { honor-xdg-activation-with-invalid-serial; }
+window-rule {
+    match title="Firefox"
+    open-on-workspace "c"
+    open-maximized true
+}
+
+hotkey-overlay { skip-at-startup; }
