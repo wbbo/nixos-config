@@ -276,19 +276,21 @@ fi
 # ---- 阶段 1.6: git commit (nixos-install --flake 仅读取 git 追踪文件) ----
 # nixos-install 通过 git+file:// 读取 flake, 必须确保 hardware-configuration.nix
 # 和 flake.lock 都已 commit, 否则构建时报 "path does not exist" 或 "not tracked by Git"。
-if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  git -C "$SCRIPT_DIR" add hosts/wbb/hardware-configuration.nix
-  # flake.lock 可能被 nixos-generate-config 的副作用修改 (如移除 disko 引用)
-  git -C "$SCRIPT_DIR" add flake.lock 2>/dev/null || true
-  git -C "$SCRIPT_DIR" \
+# 注意: NixOS Live ISO 可能未配置 git user.{name,email}, 需通过 -c 临时覆盖。
+if [ -d "$SCRIPT_DIR/.git" ]; then
+  git -C "$SCRIPT_DIR" add hosts/wbb/hardware-configuration.nix flake.lock 2>/dev/null || true
+  if git -C "$SCRIPT_DIR" \
     -c user.email="install@nixos.local" \
     -c user.name="NixOS Installer" \
-    commit -m "install: hardware-configuration for $(hostname)" || {
-    warn "git commit 失败, 安装可能无法继续"
-  }
-  info "hardware-configuration.nix 已提交到 git"
+    commit -m "install: hardware-configuration for $(hostname)" 2>/dev/null; then
+    info "hardware-configuration.nix 已提交到 git"
+  else
+    # commit 可能因无变更而失败 (已存在相同提交), 不影响后续安装
+    warn "git commit 未执行 (可能已提交或无变更), 继续安装"
+  fi
 else
-  warn "非 git 仓库, 跳过 commit (nixos-install --flake 可能失败)"
+  warn "$SCRIPT_DIR/.git 不存在, 无法 commit。请确保从 git clone 获取本仓库。"
+  die "非 git 仓库, nixos-install --flake 无法读取文件。请用 git clone 重新获取。"
 fi
 
 # 确保 git 允许当前用户访问 (libgit2 安全检查: 仓库所有者必须匹配)
