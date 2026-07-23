@@ -278,9 +278,14 @@ fi
 # 和 flake.lock 都已 commit, 否则构建时报 "path does not exist" 或 "not tracked by Git"。
 # 注意: NixOS Live ISO 可能未配置 git user.{name,email}, 需通过 -c 临时覆盖。
 if [ -d "$SCRIPT_DIR/.git" ]; then
-  # 修复 git index 所有者问题: rsync 作为 root 运行后 index 属主可能不是 repo 属主
-  [ -f "$SCRIPT_DIR/.git/index" ] && [ "$(stat -c %u "$SCRIPT_DIR/.git/index" 2>/dev/null)" != "$(id -u 2>/dev/null)" ] && \
-    rm -f "$SCRIPT_DIR/.git/index" && git -C "$SCRIPT_DIR" reset HEAD 2>/dev/null || true
+  # 修复 git index 所有者问题: rsync 作为 root 运行后 index 属主可能不是 repo 属主。
+  # 如果 index 损坏或缺失, 重建它 (reset HEAD 从 HEAD tree 重新读取)。
+  if [ -f "$SCRIPT_DIR/.git/index" ] && [ "$(stat -c %u "$SCRIPT_DIR/.git/index" 2>/dev/null)" != "$(id -u 2>/dev/null)" ]; then
+    rm -f "$SCRIPT_DIR/.git/index"
+  fi
+  if [ ! -f "$SCRIPT_DIR/.git/index" ]; then
+    git -C "$SCRIPT_DIR" read-tree HEAD 2>/dev/null || git -C "$SCRIPT_DIR" reset HEAD 2>/dev/null || true
+  fi
   git -C "$SCRIPT_DIR" add hosts/wbb/hardware-configuration.nix flake.lock 2>/dev/null || true
   if git -C "$SCRIPT_DIR" \
     -c user.email="install@nixos.local" \
