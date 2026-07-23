@@ -29,16 +29,24 @@ in
   };
 
   # 雾凇拼音 Rime 配置
-  # - __include 加载雾凇默认方案(词库/双拼 schema/标点/Lua 脚本)
-  # - 覆盖 schema_list 为小鹤双拼(double_pinyin_flypy)
-  xdg.dataFile."rime/default.custom.yaml".text = builtins.toJSON {
+  # - __include 加载雾凇默认方案(词库/双拼/schema/标点/Lua 脚本)
+  # - 默认 schema 为 rime_ice (雾凇拼音全拼)
+  xdg.dataFile."fcitx5/rime/default.custom.yaml".text = builtins.toJSON {
     patch = {
       __include = "rime_ice_suggestion:/";
       schema_list = [{
-        schema = "double_pinyin_flypy";
+        schema = "rime_ice";
       }];
       menu.page_size = 9;
       switcher.hotkeys = [ "Control+grave" ];
     };
   };
+
+  # rime_ice 雾凇拼音默认简体中文
+  xdg.dataFile."fcitx5/rime/rime_ice.custom.yaml".text = ''
+    patch:
+      switches:
+        - name: traditionalization
+          reset: 0  # 默认简体 (0 = 简)
+  '';
 }
