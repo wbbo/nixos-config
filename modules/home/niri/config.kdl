@@ -1,5 +1,6 @@
 // ====================================================================
-// Niri 配置 —— 参考 shorin-niri + noctalia 方案
+// Niri 配置 —— Noctalia v5 + shorin-niri 方案
+// 参考: https://docs.noctalia.dev/v5/compositor-settings/niri/
 // 子配置文件: binds.kdl(快捷键) / rule.kdl(窗口规则)
 // ====================================================================
 
@@ -53,14 +54,28 @@ input {
     focus-follows-mouse max-scroll-amount="0%"
 }
 
-// ================ 概览 + 壁纸(noctalia 提供) ================
+// ================ 概览 + 壁纸(noctalia backdrop 提供) ================
 overview {
+    backdrop-color "#26233a"
     workspace-shadow { off; }
     zoom 0.5
 }
 
 // ================ 启动项 ================
 spawn-at-startup "noctalia"
+
+// ================ 屏幕盖处理(laptop lid) ================
+switch-events {
+    lid-close { spawn "noctalia" "msg" "session" "lock-and-suspend"; }
+}
+
+// ================ 模糊效果(Niri >= 26.04) ================
+blur {
+    passes 2
+    offset 3.0
+    noise 0.03
+    saturation 1.0
+}
 
 // ================ 布局(参考 shorin-niri) ================
 layout {
@@ -100,15 +115,56 @@ animations {
     overview-open-close      { spring damping-ratio=1.0 stiffness=900 epsilon=0.0001; }
 }
 
-// ================ 工作区 + 窗口规则 ================
+// ================ 工作区 + 窗口/图层规则 ================
 workspace "a" { }
 workspace "b" { }
 workspace "c" { }
 
+// 全局窗口圆角 (Noctalia v5 推荐 20)
 window-rule {
-    geometry-corner-radius 6
+    geometry-corner-radius 20
     clip-to-geometry true
 }
+
+// 全局窗口模糊
+window-rule {
+    background-effect {
+        blur true
+        xray false
+    }
+}
+
+// Noctalia 设置窗口浮动
+window-rule {
+    match app-id="dev.noctalia.Noctalia"
+    open-floating true
+    default-column-width { fixed 1080; }
+    default-window-height { fixed 920; }
+}
+
+// Noctalia 面板/通知/dock/OSD 图层模糊
+layer-rule {
+    match namespace="^noctalia-(bar-[^\"]+|notification|dock|panel|attached-panel|osd)$"
+    background-effect {
+        xray false
+    }
+}
+
+// Noctalia 窗口切换器模糊
+layer-rule {
+    match namespace="noctalia-window-switcher"
+    background-effect {
+        blur true
+        xray false
+    }
+}
+
+// Noctalia 壁纸背景(backdrop layer)
+layer-rule {
+    match namespace="^noctalia-wallpaper"
+    place-within-backdrop true
+}
+
 debug { honor-xdg-activation-with-invalid-serial; }
 window-rule {
     match title="Firefox"

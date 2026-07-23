@@ -8,21 +8,18 @@ binds {
     Mod+E              { spawn "nautilus"; }
     Mod+B              { spawn "firefox"; }
 
-    // -------- Noctalia --------
-    Mod+Comma          { spawn "noctalia" "ipc" "call" "settings" "toggle"; }
-    Super+Alt+L        { spawn "noctalia" "ipc" "call" "lockScreen" "lock"; }
-    Mod+Space          { spawn "noctalia" "ipc" "call" "launcher" "toggle"; }
+    // -------- Noctalia (v5 IPC: "noctalia msg <cmd>") --------
+    Mod+Space          { spawn-sh "noctalia msg panel-toggle launcher"; }
+    Mod+S              { spawn-sh "noctalia msg panel-toggle control-center"; }
+    Mod+Comma          { spawn-sh "noctalia msg settings-toggle"; }
+    Alt+Tab            { spawn-sh "noctalia msg window-switcher"; }
     Mod+Shift+Slash    { show-hotkey-overlay; }
 
-    // -------- 焦点移动(hjkl/wasd/方向键) --------
+    // -------- 焦点移动(hjkl/方向键) --------
     Mod+H repeat=false { focus-column-left; }
     Mod+L repeat=false { focus-column-right; }
     Mod+J repeat=false { focus-window-down; }
     Mod+K repeat=false { focus-window-up; }
-    Mod+W              { focus-window-up; }
-    Mod+S              { focus-window-down; }
-    Mod+A              { consume-or-expel-window-left; }
-    Mod+D              { consume-or-expel-window-right; }
     Mod+Left  repeat=false { focus-column-left; }
     Mod+Right repeat=false { focus-column-right; }
     Mod+Up    repeat=false { focus-window-up; }
@@ -30,14 +27,6 @@ binds {
     Mod+Tab          { focus-workspace-previous; }
 
     // -------- 移动窗口(Ctrl) --------
-    Mod+Ctrl+H { move-column-left; }
-    Mod+Ctrl+L { move-column-right; }
-    Mod+Ctrl+J { move-window-down; }
-    Mod+Ctrl+K { move-window-up; }
-    Mod+Ctrl+W { move-window-up; }
-    Mod+Ctrl+S { move-window-down; }
-    Mod+Ctrl+A { move-column-left; }
-    Mod+Ctrl+D { move-column-right; }
     Mod+Ctrl+Left  { move-column-left; }
     Mod+Ctrl+Right { move-column-right; }
     Mod+Ctrl+Up    { move-window-up; }
@@ -120,15 +109,15 @@ binds {
     Mod+Ctrl+Shift+WheelScrollDown cooldown-ms=150 { move-column-to-workspace-down; }
     Mod+Ctrl+Shift+WheelScrollUp   cooldown-ms=150 { move-column-to-workspace-up; }
 
-    // -------- 多媒体键 --------
-    XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05+"; }
-    XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05-"; }
-    XF86AudioMute        allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
+    // -------- 多媒体键 (via noctalia msg) --------
+    XF86AudioRaiseVolume allow-when-locked=true { spawn-sh "noctalia msg volume-up"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn-sh "noctalia msg volume-down"; }
+    XF86AudioMute        allow-when-locked=true { spawn-sh "noctalia msg volume-mute"; }
+    XF86MonBrightnessUp   allow-when-locked=true { spawn-sh "noctalia msg brightness-up"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn-sh "noctalia msg brightness-down"; }
     XF86AudioPlay        allow-when-locked=true { spawn "playerctl" "play-pause"; }
     XF86AudioNext        allow-when-locked=true { spawn "playerctl" "next"; }
     XF86AudioPrev        allow-when-locked=true { spawn "playerctl" "previous"; }
-    XF86MonBrightnessUp   allow-when-locked=true { spawn "brightnessctl" "set" "+5%"; }
-    XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "set" "5%-"; }
     Mod+MouseMiddle  { close-window; }
     Mod+MouseForward { focus-window-up; }
     Mod+MouseBack    { focus-window-down; }
