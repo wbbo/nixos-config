@@ -278,6 +278,9 @@ fi
 # 和 flake.lock 都已 commit, 否则构建时报 "path does not exist" 或 "not tracked by Git"。
 # 注意: NixOS Live ISO 可能未配置 git user.{name,email}, 需通过 -c 临时覆盖。
 if [ -d "$SCRIPT_DIR/.git" ]; then
+  # 修复 git index 所有者问题: rsync 作为 root 运行后 index 属主可能不是 repo 属主
+  [ -f "$SCRIPT_DIR/.git/index" ] && [ "$(stat -c %u "$SCRIPT_DIR/.git/index" 2>/dev/null)" != "$(id -u 2>/dev/null)" ] && \
+    rm -f "$SCRIPT_DIR/.git/index" && git -C "$SCRIPT_DIR" reset HEAD 2>/dev/null || true
   git -C "$SCRIPT_DIR" add hosts/wbb/hardware-configuration.nix flake.lock 2>/dev/null || true
   if git -C "$SCRIPT_DIR" \
     -c user.email="install@nixos.local" \
@@ -285,12 +288,10 @@ if [ -d "$SCRIPT_DIR/.git" ]; then
     commit -m "install: hardware-configuration for $(hostname)" 2>/dev/null; then
     info "hardware-configuration.nix 已提交到 git"
   else
-    # commit 可能因无变更而失败 (已存在相同提交), 不影响后续安装
     warn "git commit 未执行 (可能已提交或无变更), 继续安装"
   fi
 else
-  warn "$SCRIPT_DIR/.git 不存在, 无法 commit。请确保从 git clone 获取本仓库。"
-  die "非 git 仓库, nixos-install --flake 无法读取文件。请用 git clone 重新获取。"
+  die "$SCRIPT_DIR/.git 不存在, 无法 commit。请从 git clone 重新获取本仓库。"
 fi
 
 # 确保 git 允许当前用户访问 (libgit2 安全检查: 仓库所有者必须匹配)
