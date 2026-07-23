@@ -78,7 +78,11 @@ blur {
 }
 
 // ================ 布局(参考 shorin-niri) ================
+// 关键: 使用 noctalia-wallpaper layer 方案时，必须设置 transparent 背景
+// 否则 niri 自带背景色会遮挡 Noctalia 的壁纸 layer
+// 参考: https://docs.noctalia.dev/v5/compositor-settings/niri/
 layout {
+    background-color "transparent"
     gaps 10
     center-focused-column "never"
     default-column-width { proportion 0.5; }
