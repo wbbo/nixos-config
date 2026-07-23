@@ -14,31 +14,31 @@
   fileSystems."/" =
     { device = "/dev/disk/by-uuid/7e21a086-914f-4f5e-b389-e4e02d5cd973";
       fsType = "btrfs";
-      options = [ "subvol=@root" ];
+      options = [ "subvol=@root" "compress=zstd:3" "noatime" ];
     };
 
   fileSystems."/nix" =
     { device = "/dev/disk/by-uuid/7e21a086-914f-4f5e-b389-e4e02d5cd973";
       fsType = "btrfs";
-      options = [ "subvol=@nix" ];
+      options = [ "subvol=@nix" "compress=zstd:3" "noatime" ];
     };
 
   fileSystems."/persist" =
     { device = "/dev/disk/by-uuid/7e21a086-914f-4f5e-b389-e4e02d5cd973";
       fsType = "btrfs";
-      options = [ "subvol=@persist" ];
+      options = [ "subvol=@persist" "compress=zstd:3" "noatime" ];
     };
 
   fileSystems."/swap" =
     { device = "/dev/disk/by-uuid/7e21a086-914f-4f5e-b389-e4e02d5cd973";
       fsType = "btrfs";
-      options = [ "subvol=@swap" ];
+      options = [ "subvol=@swap" "noatime" ];
     };
 
   fileSystems."/.snapshots" =
     { device = "/dev/disk/by-uuid/7e21a086-914f-4f5e-b389-e4e02d5cd973";
       fsType = "btrfs";
-      options = [ "subvol=@snapshots" ];
+      options = [ "subvol=@snapshots" "noatime" ];
     };
 
   fileSystems."/boot" =

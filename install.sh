@@ -219,6 +219,19 @@ info "[1.5/3] 检测硬件: 生成 hardware-configuration.nix"
 nixos-generate-config --root /mnt 2>/dev/null || true
 if [ -f /mnt/etc/nixos/hardware-configuration.nix ]; then
   cp /mnt/etc/nixos/hardware-configuration.nix hosts/wbb/ || die "无法复制 hardware-configuration.nix 到 hosts/wbb/"
+
+  # nixos-generate-config 不会保留安装时的 mount options (compress/noatime),
+  # 对于 btrfs 子卷必须在 options 列表中补全这些挂载选项。
+  # 用 sed 替换每个 btrfs options 行, 仅在缺省时追加。
+  info "补全 btrfs 挂载选项 (compress=zstd:3 / noatime)"
+
+  # /   (除 @swap 和 @snapshots 外都加 compress=zstd:3)
+  sed -i 's/options = \[ "subvol=@root" \]/options = [ "subvol=@root" "compress=zstd:3" "noatime" ]/' hosts/wbb/hardware-configuration.nix
+  sed -i 's/options = \[ "subvol=@nix" \]/options = [ "subvol=@nix" "compress=zstd:3" "noatime" ]/' hosts/wbb/hardware-configuration.nix
+  sed -i 's/options = \[ "subvol=@persist" \]/options = [ "subvol=@persist" "compress=zstd:3" "noatime" ]/' hosts/wbb/hardware-configuration.nix
+  sed -i 's/options = \[ "subvol=@swap" \]/options = [ "subvol=@swap" "noatime" ]/' hosts/wbb/hardware-configuration.nix
+  sed -i 's/options = \[ "subvol=@snapshots" \]/options = [ "subvol=@snapshots" "noatime" ]/' hosts/wbb/hardware-configuration.nix
+
   info "hardware-configuration.nix 已生成到 hosts/wbb/"
 else
   warn "nixos-generate-config 失败, 使用默认硬件配置"
