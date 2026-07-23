@@ -1,0 +1,14 @@
+# 只追踪项目核心文件
+*
+!*/
+!.envrc
+!.gitattributes
+!.gitignore
+!*.kdl
+!*.lock
+!*.md
+!*.nix
+!*.sh
+.claude/
+doc/
+shorin-niri/

@@ -1,0 +1,145 @@
+// 快捷键绑定 —— 参考 shorin-niri + youth 键位体系
+binds {
+    // -------- 程序启动(shorin-niri 风格) --------
+    Mod+T              { spawn "kitty"; }
+    Mod+Return         { spawn "kitty"; }
+    Mod+Slash          { spawn "kitty" "--single-instance"; }
+    Mod+Z              { spawn "fuzzel"; }
+    Mod+E              { spawn "nautilus"; }
+    Mod+B              { spawn "firefox"; }
+
+    // -------- Noctalia --------
+    Mod+Comma          { spawn "noctalia" "ipc" "call" "settings" "toggle"; }
+    Super+Alt+L        { spawn "noctalia" "ipc" "call" "lockScreen" "lock"; }
+    Mod+Space          { spawn "noctalia" "ipc" "call" "launcher" "toggle"; }
+    Mod+Shift+Slash    { show-hotkey-overlay; }
+
+    // -------- 焦点移动(hjkl/wasd/方向键) --------
+    Mod+H repeat=false { focus-column-left; }
+    Mod+L repeat=false { focus-column-right; }
+    Mod+J repeat=false { focus-window-down; }
+    Mod+K repeat=false { focus-window-up; }
+    Mod+W              { focus-window-up; }
+    Mod+S              { focus-window-down; }
+    Mod+A              { consume-or-expel-window-left; }
+    Mod+D              { consume-or-expel-window-right; }
+    Mod+Left  repeat=false { focus-column-left; }
+    Mod+Right repeat=false { focus-column-right; }
+    Mod+Up    repeat=false { focus-window-up; }
+    Mod+Down  repeat=false { focus-window-down; }
+    Mod+Tab          { focus-workspace-previous; }
+
+    // -------- 移动窗口(Ctrl) --------
+    Mod+Ctrl+H { move-column-left; }
+    Mod+Ctrl+L { move-column-right; }
+    Mod+Ctrl+J { move-window-down; }
+    Mod+Ctrl+K { move-window-up; }
+    Mod+Ctrl+W { move-window-up; }
+    Mod+Ctrl+S { move-window-down; }
+    Mod+Ctrl+A { move-column-left; }
+    Mod+Ctrl+D { move-column-right; }
+    Mod+Ctrl+Left  { move-column-left; }
+    Mod+Ctrl+Right { move-column-right; }
+    Mod+Ctrl+Up    { move-window-up; }
+    Mod+Ctrl+Down  { move-window-down; }
+    Mod+Home { focus-column-first; }
+    Mod+End  { focus-column-last; }
+    Mod+Ctrl+Home { move-column-to-first; }
+    Mod+Ctrl+End  { move-column-to-last; }
+
+    // -------- 显示器导航 --------
+    Mod+Shift+H { focus-monitor-left; }
+    Mod+Shift+L { focus-monitor-right; }
+    Mod+Shift+J { focus-monitor-down; }
+    Mod+Shift+K { focus-monitor-up; }
+    Mod+Shift+Ctrl+H { move-column-to-monitor-left; }
+    Mod+Shift+Ctrl+L { move-column-to-monitor-right; }
+
+    // -------- 列宽/窗高 --------
+    Mod+R           { switch-preset-column-width; }
+    Mod+Shift+R     { switch-preset-window-height; }
+    Mod+Ctrl+R      { reset-window-height; }
+    Mod+Ctrl+F      { expand-column-to-available-width; }
+    Mod+F           { maximize-column; }
+    Mod+Alt+F       { fullscreen-window; }
+    Mod+C           { center-column; }
+    Mod+Minus       { set-column-width "-5%"; }
+    Mod+Equal       { set-column-width "+5%"; }
+    Mod+Shift+Minus { set-window-height "-5%"; }
+    Mod+Shift+Equal { set-window-height "+5%"; }
+
+    // -------- 标签页 / 浮动 --------
+    Mod+BracketLeft  repeat=false { consume-or-expel-window-left; }
+    Mod+BracketRight repeat=false { consume-or-expel-window-right; }
+    Mod+Shift+A      { consume-window-into-column; }
+    Mod+Shift+D      { expel-window-from-column; }
+    Mod+X            { toggle-column-tabbed-display; }
+    Mod+V            { toggle-window-floating; }
+    Mod+Shift+V repeat=false { switch-focus-between-floating-and-tiling; }
+    Mod+N repeat=false { switch-focus-between-floating-and-tiling; }
+
+    // -------- 工作区(绝对) --------
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
+
+    // -------- 工作区(相对) --------
+    Mod+U       { focus-workspace-down; }
+    Mod+I       { focus-workspace-up; }
+    Mod+Ctrl+U  { move-column-to-workspace-down; }
+    Mod+Ctrl+I  { move-column-to-workspace-up; }
+    Mod+Shift+U { move-workspace-down; }
+    Mod+Shift+I { move-workspace-up; }
+    Mod+Ctrl+1 { move-column-to-workspace 1; }
+    Mod+Ctrl+2 { move-column-to-workspace 2; }
+    Mod+Ctrl+3 { move-column-to-workspace 3; }
+    Mod+Ctrl+4 { move-column-to-workspace 4; }
+    Mod+Ctrl+5 { move-column-to-workspace 5; }
+    Mod+Ctrl+6 { move-column-to-workspace 6; }
+    Mod+Ctrl+7 { move-column-to-workspace 7; }
+    Mod+Ctrl+8 { move-column-to-workspace 8; }
+    Mod+Ctrl+9 { move-column-to-workspace 9; }
+
+    // -------- 概览 --------
+    Mod+O repeat=false { toggle-overview; }
+    Mod+G repeat=false { toggle-overview; }
+
+    // -------- 滚轮操作 --------
+    Mod+WheelScrollDown  { focus-column-right; }
+    Mod+WheelScrollUp    { focus-column-left; }
+    Mod+Ctrl+WheelScrollDown { move-column-right; }
+    Mod+Ctrl+WheelScrollUp   { move-column-left; }
+    Mod+Shift+WheelScrollDown      cooldown-ms=150 { focus-workspace-down; }
+    Mod+Shift+WheelScrollUp        cooldown-ms=150 { focus-workspace-up; }
+    Mod+Ctrl+Shift+WheelScrollDown cooldown-ms=150 { move-column-to-workspace-down; }
+    Mod+Ctrl+Shift+WheelScrollUp   cooldown-ms=150 { move-column-to-workspace-up; }
+
+    // -------- 多媒体键 --------
+    XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05+"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05-"; }
+    XF86AudioMute        allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
+    XF86AudioPlay        allow-when-locked=true { spawn "playerctl" "play-pause"; }
+    XF86AudioNext        allow-when-locked=true { spawn "playerctl" "next"; }
+    XF86AudioPrev        allow-when-locked=true { spawn "playerctl" "previous"; }
+    XF86MonBrightnessUp   allow-when-locked=true { spawn "brightnessctl" "set" "+5%"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "set" "5%-"; }
+    Mod+MouseMiddle  { close-window; }
+    Mod+MouseForward { focus-window-up; }
+    Mod+MouseBack    { focus-window-down; }
+
+    // -------- 截图 --------
+    Print { spawn "sh" "-c" "grim -g \"$(slurp)\" - | wl-copy"; }
+    Mod+Print { spawn "sh" "-c" "grim - | wl-copy"; }
+
+    // -------- 系统 --------
+    Mod+Q          { close-window; }
+    Mod+Shift+E    { quit; }
+    Ctrl+Alt+Delete { quit; }
+    Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
+}

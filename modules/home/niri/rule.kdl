@@ -1,0 +1,97 @@
+// Niri 窗口规则 —— 参考 shorin-niri 预设
+// 包含: 全局样式、浮动窗口列表、特殊行为窗口
+
+// 全局窗口规则
+window-rule {
+    match is-active=true
+    opacity 0.97
+    geometry-corner-radius 8
+    clip-to-geometry true
+    draw-border-with-background false
+}
+
+// ===== 浮动窗口(弹窗/对话框/工具) =====
+// 截图工具
+window-rule {
+    match app-id="^(satty|flameshot|copyq)$"
+    open-floating true
+    opacity 1.0
+}
+
+// 系统设置/管理
+window-rule {
+    match app-id="^(pavucontrol|blueman-manager|nm-connection-editor|nmtui|wifi|gnome-disks)$"
+    open-floating true
+}
+
+// 文件压缩/归档
+window-rule {
+    match app-id="^(file-roller|org.gnome.FileRoller|engrampa|ark)$"
+    open-floating true
+}
+
+// 输入法
+window-rule {
+    match app-id="^(fcitx-configtool|fcitx5-config-qt)$"
+    open-floating true
+}
+
+// 计算器
+window-rule {
+    match app-id="^(galculator|gnome-calculator|mate-calc|qalculate-gtk)$"
+    open-floating true
+}
+
+// 文件选择器
+window-rule {
+    match app-id="^(xdg-desktop-portal-gnome|xdg-desktop-portal-gtk|xdp-gtk)$"
+    open-floating true
+}
+
+// Thunar 进度对话框
+window-rule {
+    match app-id="^(thunar)$"
+    match title="File Operation Progress"
+    open-floating true
+}
+
+// 图片/视频查看器(PiP)
+window-rule {
+    match title="^(图片查看器|画中画|视频播放器|Picture-in-Picture)$"
+    open-floating true
+    opacity 1.0
+}
+
+// mpv / celluloid
+window-rule {
+    match app-id="^(mpv|celluloid)$"
+    opacity 1.0
+}
+
+// ===== 尺寸/位置控制 =====
+// 快捷终端
+window-rule {
+    match app-id="^(org.wezfurlong.wezterm)$"
+    open-floating true
+    default-column-width { fixed 800; }
+}
+
+// 流媒体表单(如 Bilibili webapp)
+window-rule {
+    match app-id="^(stream\\.bilibili\\.com.*)$"
+    default-column-display "tabbed"
+}
+
+// ===== 隐私/屏幕捕获 =====
+// 阻止密码管理器等应用被截屏
+window-rule {
+    match app-id="^(org.keepassxc.KeePassXC|secrets)$"
+    block-out-from "screen-capture"
+}
+
+// ===== Steam 特殊处理 =====
+window-rule {
+    match app-id="^(steam)$"
+    match title="^(friends$|Friends List|好友列表)"
+    default-column-width { proportion 0.20; }
+}
