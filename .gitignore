@@ -1,0 +1,17 @@
+# 只追踪项目核心文件
+*
+!*/
+!.envrc
+!.gitattributes
+!.gitignore
+!*.kdl
+!*.lock
+!*.md
+!*.nix
+!*.sh
+!.sops.yaml
+!*.yaml
+!hosts/wbb/hardware-configuration.nix
+.claude/
+doc/
+shorin-niri/modules/nixos/mihomo-config.yaml
