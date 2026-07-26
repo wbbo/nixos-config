@@ -1,0 +1,31 @@
+# SOPS 创建规则 —— 指定 encrypt 时使用哪些 age 公钥
+# 参考: https://github.com/Mic92/sops-nix
+#
+# 设置步骤:
+#   1. 生成 age 密钥对:
+#      mkdir -p ~/.config/sops/age
+#      nix shell nixpkgs#age --command age-keygen -o ~/.config/sops/age/keys.txt
+#      # 公钥: cat ~/.config/sops/age/keys.txt | grep "public key" | awk '{print $NF}'
+#      # 私钥: 文件中的 AGE-SECRET-KEY-1... 行（绝对不能泄露）
+#
+#   2. 将公钥加入下方 age: 列表:
+#      creation_rules:
+#        - path_regex: secrets/secrets\.yaml$
+#          age:
+#            - age1你的公钥
+#
+#   3. 首次加密:
+#      nix shell nixpkgs#sops --command sops -e -i secrets/secrets.yaml
+#
+#   4. 后续编辑:
+#      nix shell nixpkgs#sops --command sops secrets/secrets.yaml
+#
+# 已有的 age 公钥（自动解密）：
+#   - ~/.config/sops/age/keys.txt         # 用户级
+#   - /root/.config/sops/age/keys.txt     # install.sh 自动持久化
+
+creation_rules:
+  - path_regex: secrets/secrets\.yaml$
+    age:
+      # 替换为你的 age 公钥 (age-keygen 输出的 Public key 行)
+      - age1wtdxsz42sf8u0k95wksywx26a5qz7t7x79fqq9utfr0ch5fjzvgssjzl42
