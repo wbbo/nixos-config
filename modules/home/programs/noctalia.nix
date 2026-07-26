@@ -1,9 +1,12 @@
 # noctalia 配置 —— 壁纸 + 顶栏样式
-{ noctalia, ... }:
+{ noctalia, pkgs, ... }:
+let
+  noctaliaPkg = noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default;
+in
 {
   home.activation.createWallpaperDir = ''
     mkdir -p /home/wbb/wallpaper
-    cp -n ${noctalia.packages.x86_64-linux.default}/share/noctalia/assets/noctalia-wallpaper.png /home/wbb/wallpaper/ || true
+    cp -n ${noctaliaPkg}/share/noctalia/assets/noctalia-wallpaper.png /home/wbb/wallpaper/ || true
   '';
 
   xdg.configFile."noctalia/config.toml".text = ''

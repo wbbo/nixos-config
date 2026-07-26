@@ -9,8 +9,9 @@
   fcitx5Pkgs = pkgs.qt6Packages.fcitx5-with-addons.override {
     addons = [
       fcitx5Rime                    # Rime 引擎 + 雾凇拼音词库
-      pkgs.qt6Packages.fcitx5-qt    # GTK immodule (was fcitx5-gtk)
     ];
+    # fcitx5-qt (Qt5/Qt6) + fcitx5-gtk 已在 fcitx5-with-addons 的 paths 中，
+    # 无需在此重复添加。GTK_IM_MODULE 等环境变量在 home.sessionVariables 中设置。
   };
 in
 {

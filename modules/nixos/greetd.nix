@@ -12,7 +12,9 @@
         # 场景: 用户使用 nixos-rebuild test 或 systemctl restart greetd
         #       时，旧 niri 可能还未退出，niri-session 检测到冲突就会
         #       退出，greetd 陷入死循环直到 start-limit-hit。
-        command = "${pkgs.bash}/bin/bash -c 'pkill -x niri 2>/dev/null; exec ${pkgs.niri}/bin/niri-session'";
+        # 先 pkill SIGTERM 再等待退出 (最多 3 秒)，避免旧 niri 抢占
+        # Wayland socket / DRM 设备导致 niri-session 失败。
+        command = "${pkgs.bash}/bin/bash -c 'pkill -x niri 2>/dev/null; for _ in $(seq 1 30); do pgrep -x niri >/dev/null 2>&1 || break; sleep 0.1; done; exec ${pkgs.niri}/bin/niri-session'";
         user = "wbb";
       };
     };

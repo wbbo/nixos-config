@@ -38,6 +38,8 @@
     pavucontrol   # 音量图形控制
 
     # Noctalia Shell(面板/通知/启动器/锁屏)
+    # 第三方外部项目，无 Home Manager module (programs.noctalia.enable)，
+    # 通过 home.packages + home.activation 脚本 (noctalia.nix) 安装。
     noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 }

@@ -265,8 +265,26 @@ if [ -z "$PASS_HASH_ARG" ]; then
 fi
 
 if [ -z "$GITHUB_TOKEN_ARG" ] && [ "$FORCE" -ne 1 ]; then
-  warn "未获取到 GitHub token (secrets 中无 github-netrc 且未传 -t)"
-  info "将不写入 github-netrc — nix flake 访问公开仓库无需 token"
+  # 如果旧 secrets 存在但无法提取 github-netrc (可能已损坏)，拒绝覆写
+  if [ -f "$SECRETS_FILE" ]; then
+    HAVE_OLD_NETRC="$(SOPS_AGE_KEY_FILE="$AGE_KEY_SRC" nix --extra-experimental-features "nix-command flakes" \
+      shell nixpkgs#sops --command sops -d --extract '["github-netrc"]' "$SECRETS_FILE" 2>/dev/null)" || true
+    if [ -n "$HAVE_OLD_NETRC" ]; then
+      # 之前提取失败但重试成功，使用提取值
+      EXISTING_TOKEN="$(printf '%s' "$HAVE_OLD_NETRC" | grep -oP 'password \K\S+')"
+      EXISTING_USER="$(printf '%s' "$HAVE_OLD_NETRC" | grep -oP 'login \K\S+')"
+      if [ -n "$EXISTING_TOKEN" ]; then
+        GITHUB_TOKEN_ARG="$EXISTING_TOKEN"
+        [ -n "$EXISTING_USER" ] && GITHUB_USER_ARG="$EXISTING_USER"
+        info "重试提取 github-netrc 成功 (用户: ${GITHUB_USER_ARG:-未知})"
+      fi
+    fi
+  fi
+  # 仍为空则警告但不阻塞——公开仓库无需 token
+  if [ -z "$GITHUB_TOKEN_ARG" ]; then
+    warn "未获取到 GitHub token (secrets 中无 github-netrc 且未传 -t)"
+    info "将不写入 github-netrc — nix flake 访问公开仓库无需 token"
+  fi
 fi
 
 # ============================================================================
@@ -285,6 +303,19 @@ if [ -n "$GITHUB_TOKEN_ARG" ]; then
 fi
 
 printf -v SECRETS_CONTENT '%swbb-password-hash: "%s"\n' "$SECRETS_CONTENT" "$PASS_HASH_ARG"
+
+# 保护性检查: 如果旧 secrets 有 github-netrc 而新内容缺失，拒绝覆写
+if [ -s "$SECRETS_FILE" ] && [ -z "$GITHUB_TOKEN_ARG" ]; then
+  OLD_NETRC_FINAL="$(SOPS_AGE_KEY_FILE="$AGE_KEY_SRC" nix --extra-experimental-features "nix-command flakes" \
+    shell nixpkgs#sops --command sops -d --extract '["github-netrc"]' "$SECRETS_FILE" 2>/dev/null)" || true
+  if [ -n "$OLD_NETRC_FINAL" ]; then
+    OLD_TOKEN="$(printf '%s' "$OLD_NETRC_FINAL" | grep -oP 'password \K\S+')"
+    if [ -n "$OLD_TOKEN" ]; then
+      die "旧 secrets 含 github-netrc 但无法重新提取，拒绝覆写以防丢失 GitHub token。
+  请用 -t 参数重新传入 token，或检查 age 密钥是否正确。"
+    fi
+  fi
+fi
 
 # 创建明文 → 加密
 printf '%s' "$SECRETS_CONTENT" > "$SECRETS_FILE"
@@ -320,7 +351,7 @@ if [ "$FORCE" -eq 1 ]; then
 fi
 # --root-mountpoint 指向 /mnt (disko 在该路径下执行挂载)
 # 从 flake.lock 读取锁定的 disko commit, 保持版本一致
-DISKO_REV="$([ -f "$SCRIPT_DIR/flake.lock" ] && python3 -c "import json; print(json.load(open("$SCRIPT_DIR/flake.lock"))["nodes"]["disko"]["locked"]["rev"])" 2>/dev/null || echo "")"
+DISKO_REV="$([ -f "$SCRIPT_DIR/flake.lock" ] && python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["nodes"]["disko"]["locked"]["rev"])' "$SCRIPT_DIR/flake.lock" 2>/dev/null || echo "")"
 nix --extra-experimental-features "nix-command flakes" \
   run "github:nix-community/disko/${DISKO_REV:-master}" -- "${DISKO_FLAGS[@]}" --root-mountpoint /mnt "$DISKO_TMP" \
   || die "disko 分区失败。请检查磁盘是否被占用 (reboot 后重试)。"

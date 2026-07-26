@@ -39,7 +39,8 @@ let
         echo "$OFFSET" > /sys/power/resume_offset
         echo "detect-resume-offset: resume_offset=$OFFSET" >&2
       else
-        echo "detect-resume-offset: failed to read swapfile offset" >&2
+        echo "detect-resume-offset: failed to read swapfile offset, hibernation will not be available" >&2
+        exit 1
       fi
     '';
   };

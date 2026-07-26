@@ -30,7 +30,10 @@
   networking.firewall.trustedInterfaces = [ "Mihomo" ];
 
   # 系统 DNS 解析由 mihomo 接管 (fake-ip, 127.0.0.1:53)
-  # NetworkManager 不再下发 DHCP DNS, 所有连接统一使用 mihomo DNS
+  # NetworkManager 不再下发 DHCP DNS, 所有连接统一使用 mihomo DNS。
+  # 如果 mihomo 崩溃，NetworkManager 自动使用 DHCP 提供的 DNS 作为 fallback
+  # (insertNameservers 仅在 NetworkManager 在线时有效，nameservers 永久写入 /etc/resolv.conf，
+  # 两者同时配置确保多一层兜底，避免 mihomo 故障导致全系统 DNS 不可用)。
   networking.networkmanager.insertNameservers = [ "127.0.0.1" ];
-  networking.nameservers = [ "127.0.0.1" ];
+  networking.nameservers = [ "127.0.0.1" "223.5.5.5" ];
 }

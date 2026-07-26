@@ -32,8 +32,9 @@ environment {
 }
 
 // ================ 光标 ================
+// xcursor-theme 与 desktop.nix 中 XCURSOR_THEME 保持一致
 cursor {
-    xcursor-theme "default"
+    xcursor-theme "Bibata-Modern-Ice"
     xcursor-size 24
 }
 
