@@ -1,11 +1,19 @@
-# 用户账户:wbb
+# 用户账户:wbb + root 应急密码
 { pkgs, config, ... }:
 {
+  # root 应急密码: 当 wbb 的 sops 解密失败时仍有入口
+  # 用 mkpasswd -m yescrypt 生成, 需要从 secrets 中提取
+  users.users.root = {
+    # 从 secrets 解密后的密码文件读取 (和 wbb 共用同一个密码)
+    hashedPasswordFile = config.sops.secrets.wbb-password-hash.path;
+    # 如果 secrets 解密失败, root 依然被锁定 (安全考虑)
+    # 届时需用 Live ISO chroot 恢复
+  };
+
   users.users.wbb = {
     description = "wbb";
     isNormalUser = true;
     home = "/home/wbb";
-    # 默认 shell 为 fish;如需改回 bash,用 pkgs.bashInteractive
     shell = pkgs.fish;
     ignoreShellProgramCheck = true;
 
