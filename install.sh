@@ -474,6 +474,12 @@ info "总 swap: $(free -m | awk '/Swap:/{print $2}')M"
 info "[3/3] nixos-install: 安装 NixOS (请耐心等待)"
 # 设置 GOPROXY 使用国内镜像, 避免 proxy.golang.org 超时导致 sops-install-secrets 编译失败
 export GOPROXY="https://goproxy.cn,direct"
+
+# nixos-install 默认会生成 /mnt/etc/nixos/configuration.nix 模板文件
+# 该文件干扰后续 nixos-rebuild switch (flake 优先读取 /etc/nixos)
+# 将其删除, 确保系统只使用 flake 配置
+rm -f /mnt/etc/nixos/configuration.nix 2>/dev/null || true
+rm -f /mnt/etc/NIXOS 2>/dev/null || true
 nixos-install --flake .#wbb --no-channel-copy --no-root-password
 
 swapoff "$SWAPFILE" 2>/dev/null || true
