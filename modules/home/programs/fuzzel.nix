@@ -5,7 +5,7 @@
     enable = true;
     settings = {
       main = {
-        font = "JetBrainsMono Nerd Font:size=12";
+        font = "Maple Mono NF CN:size=12";
         terminal = "${pkgs.kitty}/bin/kitty -e";
         prompt = "❯ ";
         icons-enabled = true;

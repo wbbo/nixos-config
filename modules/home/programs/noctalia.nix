@@ -55,7 +55,7 @@
     end = ["media", "tray", "notifications", "clipboard", "network", "bluetooth", "volume", "brightness", "control-center", "session"]
 
     # ============================================================
-    # 第二顶栏 —— margin 悬浮胶囊风格，JetBrains Mono
+    # 第二顶栏 —— margin 悬浮胶囊风格，Maple Mono NF CN
     # ============================================================
     [bar.bar]
     enabled = true
@@ -67,7 +67,7 @@
     margin_ends = 14
     margin_edge = 10
     scale = 1.1
-    font_family = "JetBrains Mono"
+    font_family = "Maple Mono NF CN"
 
     # 胶囊默认样式
     capsule = true

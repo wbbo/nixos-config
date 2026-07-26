@@ -7,8 +7,8 @@
       noto-fonts-cjk-sans
       noto-fonts-cjk-serif
       noto-fonts-color-emoji
-      # Nerd Font:终端图标。26.05 用新的 nerd-fonts 集合(按字体拆分)
-      nerd-fonts.jetbrains-mono
+      # Maple Mono: 带 Nerd Font 图标 + CJK 中文字形
+      maple-mono.NF-CN
     ];
     fontDir.enable = true;
   };
@@ -17,7 +17,7 @@
     defaultFonts = {
       serif = [ "Noto Serif CJK SC" "Noto Serif" ];
       sansSerif = [ "Noto Sans CJK SC" "Noto Sans" ];
-      monospace = [ "JetBrainsMono Nerd Font" "Noto Sans Mono CJK SC" ];
+      monospace = [ "Maple Mono NF CN" "Noto Sans Mono CJK SC" ];
       emoji = [ "Noto Color Emoji" ];
     };
   };
