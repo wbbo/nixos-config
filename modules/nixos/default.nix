@@ -20,5 +20,7 @@
     ./desktop.nix
     ./mihomo.nix
     ./packages.nix
+    ./persist.nix
+    ./docker.nix
   ];
 }

@@ -2,7 +2,7 @@
 
 基于 **NixOS 26.05 Flakes** 的桌面配置（[Niri](https://github.com/YaLTeR/niri) + [Noctalia Shell](https://github.com/noctalia-dev/noctalia-shell)，btrfs 五子卷由 [disko](https://github.com/nix-community/disko) 管理，secrets 用 [sops-nix](https://github.com/Mic92/sops-nix) + SSH host key 加密）。
 
-按**三种使用场景**组织：全新安装 / 已有系统使用 / 日常使用。用户名/主机名在 `hosts/default/local.nix` 定制，secrets 在 `secrets/`。
+按**两种使用场景**组织：全新安装 / 日常使用。用户名/主机名在 `hosts/default/local.nix` 定制，secrets 在 `secrets/`。
 
 ---
 
@@ -28,7 +28,12 @@ cd ~/nixos-config
 
 **第 3 步 · 准备 host key（secrets 解密凭据）**
 
-全新首装**无需准备**——直接用 Live CD 当前的 host key，`install.sh` 会自动固化到新系统（保证与 secrets 解密一致）。
+- **重装/换盘（有备份 host key）**：把备份的 `ssh_host_ed25519_key*` 复制回 Live CD 的 `/etc/ssh/`，`install.sh` 会固化到新系统（保证 secrets 可解密）。
+- **全新首装（无备份）**：Live CD 默认可能没有 host key，先生成它：
+  ```bash
+  sudo ssh-keygen -A
+  ```
+  > `install.sh` **仅在 Live CD 检测到 host key 时**固化；否则新系统首启自行生成（届时 secrets 需按新 host key 重新加密）。
 
 **第 4 步 · 初始化 secrets（首次）**
 
@@ -37,23 +42,20 @@ cd ~/nixos-config
 nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age -c ssh-to-age -i /etc/ssh/ssh_host_ed25519_key.pub
 
 # 4.2 从模板创建 secrets.yaml 并编辑填值（保存自动加密）
-nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age nixpkgs#sops -c sh -c '
-  export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key"
-  cp secrets/secrets.template.yaml secrets/secrets.yaml
-  sops secrets/secrets.yaml
-'
-nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age nixpkgs#sops -c sh -c '
-    AGE_PUB=$(ssh-to-age -i /etc/ssh/ssh_host_ed25519_key.pub)
+# 加密使用 .sops.yaml 登记的 recipients（4.1 已加入你的 host key）
+nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#sops nixpkgs#ssh-to-age -c sh -c '
     cp secrets/secrets.template.yaml secrets/secrets.yaml
-    # 🔑 关键修复：加 -i 让加密结果原地写回文件
-    sops --encrypt --in-place --age "$AGE_PUB" secrets/secrets.yaml
     export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key"
+    sops --encrypt --in-place secrets/secrets.yaml
     sops secrets/secrets.yaml
   '
 ```
-> sops 会打开编辑器（nano），填两项后保存（Ctrl+O → Enter → Ctrl+X）：
+> sops 会打开编辑器（nano），填**全部字段**后保存（Ctrl+O → Enter → Ctrl+X）：
 > - `main-user-password-hash`：你的登录密码哈希。生成：`nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#whois -c mkpasswd -m yescrypt`（输入两次密码）
 > - `github-netrc`：GitHub token。格式 `machine github.com login 用户名 password ghp_xxx`（[生成 token](https://github.com/settings/tokens)，勾 `public_repo`）
+> - `cc-switch-s3-access-key-id` / `cc-switch-s3-secret-access-key`：Cloudflare R2 访问密钥
+> - `cc-switch-s3-bucket`：R2 桶名（如 `wbo`）
+> - `cc-switch-s3-endpoint`：R2 endpoint（`https://<账户ID>.r2.cloudflarestorage.com`）
 
 **第 5 步 · 配置 local.nix（用户名 / 主机名）**
 
@@ -83,79 +85,23 @@ reboot
 
 ---
 
-## 场景二：已有系统使用（不用 install.sh）
+## 场景二：日常使用
 
-> **适用**：已装好 NixOS 的机器，接管本配置。**不要运行 `install.sh`**。
-> 在目标机器终端操作（假设已有用户 `alice`）。
+> **适用**：已装好并切换成功的系统，日常维护。所有命令在目标机器终端执行。
 
-**第 1 步 · 克隆仓库**
+**第 1 步 · 克隆仓库（首次在本机使用）**
 
 ```bash
 git clone https://github.com/<你的GitHub用户名>/nixos-config.git ~/nixos-config
 cd ~/nixos-config
 ```
+> 之后日常更新前先 `git pull` 拉取远程最新改动。
 
-**第 2 步 · 配置用户名 / 主机名（local.nix）**
-
-编辑 `hosts/default/local.nix`：
-
-```nix
-{ lib, ... }: {
-  hostName = "你的主机名";          # 系统主机名
-  mainUser = lib.mkForce "alice";  # 填你已有的用户名（接管它）
-}
-```
-
-**第 3 步 · 替换硬件配置**
+**第 2 步 · 日常更新（改配置后应用）**
 
 ```bash
-nixos-generate-config --root /
-sudo cp /etc/nixos/hardware-configuration.nix hosts/default/hardware-configuration.nix
-```
-> 用这台机器的真实硬件配置覆盖模板示例（模板里的是通用示例）。
-
-**第 4 步 · 初始化 secrets**
-
-```bash
-# 登记 host key 公钥（age1xxx 加入 .sops.yaml）
-nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age -c ssh-to-age -i /etc/ssh/ssh_host_ed25519_key.pub
-
-# 创建并编辑 secrets.yaml（保存自动加密）
-nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age nixpkgs#sops -c sh -c '
-  export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key"
-  cp secrets/secrets.template.yaml secrets/secrets.yaml
-  sops secrets/secrets.yaml
-'
-```
-> 填 `main-user-password-hash` + `github-netrc`（填值方法见场景一第 4 步）。
-
-**第 5 步 · 先构建验证**
-
-```bash
-sudo nixos-rebuild build --flake .#nixos
-```
-> 只构建不切换，出错不影响现有系统。
-
-**第 6 步 · 切换应用**
-
-```bash
-sudo nixos-rebuild switch --flake .#nixos
-```
-> 应用配置：用户名（接管/新建）、密码（secrets 哈希）、各组权限等生效。
-
-> **注意**：`mainUser` 密码会被 secrets 哈希覆盖；设成已有用户名 = 接管该用户，新名字 = 新建用户。家目录数据保留。
-
----
-
-## 场景三：日常使用
-
-> **适用**：已装好并切换成功的系统，日常维护。所有命令在目标机器终端执行。
-
-**日常更新（改配置后应用）**
-
-```bash
+nix flake update                               # 更新 flake inputs（可选; 先 update 再 switch 才生效）
 sudo nixos-rebuild switch --flake .#nixos    # 应用配置变更（改 .nix / local.nix 后）
-nix flake update                               # 更新 flake inputs（先 update 再 switch）
 sudo nix-collect-garbage --delete-old          # 清理旧系统配置（保留当前）
 ```
 > 不需要单独 `home-manager switch`（已集成）。
@@ -176,7 +122,7 @@ nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age 
 ```bash
 sudo cp -a /etc/ssh/ssh_host_ed25519_key* /备份位置/
 ```
-> 重装时恢复它（场景一第 3 步）；换设备见下。
+> 重装时把它复制回 Live CD 的 `/etc/ssh/`（见场景一步骤 3，install.sh 会固化）；换设备见下。
 
 **更换设备（新设备接管 secrets）**
 

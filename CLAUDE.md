@@ -245,6 +245,23 @@ sudo env NIX_CONFIG='netrc-file = /dev/null' nixos-rebuild switch --flake .#nixo
 
 `install.md` 是手工装机文档(parted / mkfs / btrfs 子卷 / swapfile),是本配置的设计参考。`install.sh` 自动化整个安装流程,将 install.md 的分区方案实现为可复用的脚本。
 
+## 脚本安装工具(cc-switch / claude)
+
+这两个工具**不走 Nix 打包**(自带自更新机制),用官方 install.sh 装到 `~/.local/bin`,
+由 `modules/home/programs/fish.nix` 的 `fish_add_path ~/.local/bin` 纳入 PATH。
+
+| 工具 | 安装命令 | 用途 |
+|------|---------|------|
+| cc-switch | `curl -fsSL https://github.com/SaladDay/cc-switch-cli/releases/latest/download/install.sh \| bash` | Claude Code 配置切换 + 用量查询 |
+| claude | `curl -fsSL https://claude.ai/install.sh \| bash` | Claude Code CLI(native installer) |
+
+**固化方式**:`modules/home/programs/cc-switch-claude.nix` 提供 home-manager 激活钩子
+(`home.activation.installScriptTools`),每次 switch 时检查 `~/.local/bin` 里两个工具是否缺失,
+**缺失才补装**(失败不阻断 switch)。新装机/重装后一条 `nixos-rebuild switch` 即可复现。
+
+> 注意:这两个是脚本装的非声明式工具(自带自更新),换机重装时由激活钩子自动补装;
+> 若需手动重装,用上面的 curl 命令即可。
+
 ## 敏感信息
 
 **所有敏感信息已通过 sops-nix + age 加密管理 (见上方"秘密管理"章节)。** 以下信息不再以明文签入 git:

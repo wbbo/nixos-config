@@ -4,6 +4,7 @@
   programs.kitty = {
     enable = true;
     settings = {
+      # Maple Mono: 等宽 + Nerd 图标 + CJK (反白表头发虚为渲染层面, 用 htop 规避)
       font_family = "Maple Mono NF CN";
       bold_font = "auto";
       italic_font = "auto";
@@ -35,6 +36,12 @@
       color8 = "#585b70";  color9 = "#f38ba8";  color10 = "#a6e3a1";
       color11 = "#f9e2af"; color12 = "#89b4fa"; color13 = "#f5c2e7";
       color14 = "#94e2d5"; color15 = "#a6adc8";
+    };
+
+    # X11 终端习惯的复制/粘贴键 (kitty 默认只有 ctrl+shift+c/v)
+    keybindings = {
+      "ctrl+insert" = "copy_to_clipboard";
+      "shift+insert" = "paste_from_clipboard";
     };
   };
 }

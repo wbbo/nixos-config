@@ -14,6 +14,15 @@
     ./programs/noctalia.nix
     ./programs/neovim.nix
     ./programs/vscode.nix
+    ./programs/cc-switch.nix
+    ./programs/claude.nix
+    ./programs/java.nix
+    ./programs/go.nix
+    ./programs/rust.nix
+    ./programs/python.nix
+    ./programs/node.nix
+    ./programs/c-cpp.nix
+    ./persist.nix
   ];
 
   home = {
@@ -32,6 +41,7 @@
     fd            # find 替代
     ripgrep       # grep 替代
     btop          # 系统监视器
+    htop          # 系统监视器 (替代 top, 无粗体中文表头发虚问题)
     fastfetch     # 系统信息(替代 neofetch)
     unzip
     gzip

@@ -13,6 +13,8 @@
   users.users.${config.mainUser} = {
     description = config.mainUser;
     isNormalUser = true;
+    # 主组与用户名一致 (默认 NixOS 是 users, 这里不写死)
+    group = config.mainUser;
     home = "/home/${config.mainUser}";
     shell = pkgs.fish;
     ignoreShellProgramCheck = true;
@@ -35,4 +37,7 @@
     # （pipewire、user timer 等服务需要用户实例运行）
     linger = true;
   };
+
+  # 同名主组
+  users.groups.${config.mainUser} = {};
 }

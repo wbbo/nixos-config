@@ -25,6 +25,26 @@
       main-user-password-hash = {
         neededForUsers = true;
       };
+
+      ### cc-switch S3 (Cloudflare R2) 云同步凭据
+      # 供 cc-switch.nix 激活钩子读取并执行 config s3 set (以 mainUser 运行, 故 owner 设为 mainUser)
+      cc-switch-s3-access-key-id = {
+        owner = config.mainUser;
+        mode = "0400";
+      };
+      cc-switch-s3-secret-access-key = {
+        owner = config.mainUser;
+        mode = "0400";
+      };
+      # 站点特定配置 (R2 account/bucket, 换账户只改 secrets.yaml)
+      cc-switch-s3-bucket = {
+        owner = config.mainUser;
+        mode = "0400";
+      };
+      cc-switch-s3-endpoint = {
+        owner = config.mainUser;
+        mode = "0400";
+      };
     };
   };
 }
