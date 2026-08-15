@@ -13,6 +13,7 @@
     ./programs/fcitx5.nix
     ./programs/noctalia.nix
     ./programs/neovim.nix
+    ./programs/vscode.nix
   ];
 
   home = {

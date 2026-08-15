@@ -44,7 +44,8 @@
 
     ### 无线 / 网络诊断
     iw                         # Wi-Fi 接口/链路质量/扫描
-    networkmanagerapplet       # Wi-Fi 系统托盘(兼容各桌面环境)
+    # networkmanagerapplet 已移除: 托盘网络图标由 noctalia network widget 提供
+    # (左键 control-center 网络面板 / 右键开关无线), 避免外部图标与 noctalia 观感不一致
 
     ### 基础网络调试
     dnsutils                   # dig / nslookup
