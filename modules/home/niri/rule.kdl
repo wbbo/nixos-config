@@ -68,6 +68,15 @@ window-rule {
 }
 
 // ===== 尺寸/位置控制 =====
+// Scratchpad 持久浮动终端 (Mod+Grave, niri-scratch-toggle): 中上方悬浮
+window-rule {
+    match app-id="^(scratchpad)$"
+    open-floating true
+    default-floating-position x=0 y=40 relative-to="top"
+    default-column-width { proportion 0.5; }
+    default-window-height { proportion 0.45; }
+}
+
 // 快捷终端
 window-rule {
     match app-id="^(org.wezfurlong.wezterm)$"

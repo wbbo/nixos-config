@@ -22,6 +22,8 @@
     ./programs/python.nix
     ./programs/node.nix
     ./programs/c-cpp.nix
+    ./programs/starship.nix
+    ./programs/scratchpad.nix
     ./persist.nix
   ];
 
@@ -48,6 +50,9 @@
     playerctl     # 媒体键控制
     brightnessctl # 亮度(笔记本)
     pavucontrol   # 音量图形控制
+
+    # GTK 明暗主题 (theme-sync 切换 adw-gtk3 / adw-gtk3-dark, 需先安装)
+    adw-gtk3
 
     # Noctalia Shell(面板/通知/启动器/锁屏)
     noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default

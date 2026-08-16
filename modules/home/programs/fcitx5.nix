@@ -73,4 +73,22 @@ in
       0=Default
     '';
   };
+
+  # ── NyxMellow 动态 fcitx5 皮肤 (Noctalia 模板渲染) ──────────────────────
+  # 模板源部署到 ~/.local/share/fcitx5/themes/nyxmellow/templates/, 由 Noctalia
+  # [theme.templates.user.nyxmellow_*] 渲染为 theme.conf/panel.svg/highlight.svg
+  # (见 noctalia.nix)。占位符已规范化为 {{colors.x.default.hex}} 无空格格式。
+  xdg.dataFile."fcitx5/themes/nyxmellow/templates/theme.conf".source = ./fcitx5/nyxmellow/templates/theme.conf;
+  xdg.dataFile."fcitx5/themes/nyxmellow/templates/panel.svg".source = ./fcitx5/nyxmellow/templates/panel.svg;
+  xdg.dataFile."fcitx5/themes/nyxmellow/templates/highlight.svg".source = ./fcitx5/nyxmellow/templates/highlight.svg;
+
+  # fcitx5 UI 使用 NyxMellow 主题 (force 覆盖 GUI 生成)
+  xdg.configFile."fcitx5/conf/classicui.conf" = {
+    force = true;
+    text = ''
+      Theme=nyxmellow
+      DarkTheme=nyxmellow
+      UseDarkTheme=False
+    '';
+  };
 }

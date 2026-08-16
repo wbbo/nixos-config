@@ -38,10 +38,18 @@
       color14 = "#94e2d5"; color15 = "#a6adc8";
     };
 
-    # X11 终端习惯的复制/粘贴键 (kitty 默认只有 ctrl+shift+c/v)
+    # X11 终端习惯的粘贴键: Shift+Insert 由 kitty 层处理 (覆盖所有终端内程序)。
+    # Ctrl+Insert 不再绑定 (放行给终端内应用, 如 neovim 的复制选中到系统剪贴板)。
     keybindings = {
-      "ctrl+insert" = "copy_to_clipboard";
       "shift+insert" = "paste_from_clipboard";
     };
+
+    # 动态取色: 引入 Noctalia 渲染的 noctalia.conf (壁纸 M3 取色, 见 noctalia.nix
+    # [theme.templates] builtin_ids=["kitty"])。放在文件末尾覆盖 Catppuccin 基础色,
+    # 壁纸变化时 Noctalia 重新渲染 + 内置 apply.sh 发 SIGUSR1 重载 kitty。
+    # 注意: include 已声明在配置中, apply.sh 检测到存在即跳过 mv (不破坏 home-manager symlink)。
+    extraConfig = ''
+      include themes/noctalia.conf
+    '';
   };
 }

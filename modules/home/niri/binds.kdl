@@ -8,6 +8,11 @@ binds {
     Mod+E              { spawn "nautilus"; }
     Mod+B              { spawn "firefox"; }
 
+    // -------- 护眼 / Scratchpad / 星环菜单 (NyxNiri 移植) --------
+    Mod+Shift+N { spawn "eye-care"; }                      // 护眼模式 (暖色温 + 关模糊)
+    Mod+Grave   { spawn "niri-scratch-toggle" "kitty"; }   // Scratchpad 持久浮动终端
+    Mod+A       { spawn "niri-scratch-menu"; }             // M3 星环启动器
+
     // -------- Noctalia (v5 IPC: "noctalia msg <cmd>") --------
     Mod+Space          { spawn-sh "noctalia msg panel-toggle launcher"; }
     Mod+S              { spawn-sh "noctalia msg panel-toggle control-center"; }

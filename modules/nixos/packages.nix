@@ -39,6 +39,9 @@
     nautilus
     yazi
 
+    ### 系统监控 (星环菜单 Mission Center 项依赖)
+    mission-center
+
     ### 终端装饰
     cmatrix
 

@@ -9,6 +9,9 @@ prefer-no-csd
 // ================ 模块化子配置(参考 shorin-niri) ================
 include "binds.kdl"
 include "rule.kdl"
+// 护眼模式: effects.kdl 是用户可写目录下的符号链接 (eye-care 脚本切换 normal/eyecare),
+// 必须用绝对/家目录路径 include (store 只读目录内无法放可变链接)
+include "~/.config/niri/effects.kdl"
 
 // ================ 截图路径 ================
 screenshot-path "~/screenshot/Screenshot from %Y-%m-%d %H-%M-%S.png"
@@ -78,6 +81,8 @@ overview {
 spawn-at-startup "noctalia"
 // 应用持久化的分辨率 (若 ~/.local/state/niri-resolution 存在, 覆盖声明式默认)
 spawn-at-startup "niri-apply-resolution"
+// 对齐护眼状态: 修复 effects.kdl 链接 (若缺失) + 同步 wlsunset 色温
+spawn-at-startup "eye-care" "--sync"
 
 // ================ 屏幕盖处理(laptop lid) ================
 switch-events {

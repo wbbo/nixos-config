@@ -13,9 +13,14 @@
 
     # Noctalia Shell —— 面板/通知/启动器/锁屏/壁纸(替代 waybar+mako+swaybg)
     # quickshell 由 noctalia 内部管理,无需在此声明
+    # rev 锁定到 master main (d0e88fb, 2026-08-16): 提供 [plugins]/wallpaper-set 等
+    # 后期特性 (nixpkgs 5.0.0 缺)。升级: git ls-remote 拿 main 最新 rev 后更新此处。
+    # 用 rev 而非分支名可绕过 GitHub API 限流 (flake update 查 commits/HEAD 会 403)。
+    # 注意: 不 follow 我们的 nixpkgs —— Noctalia 官方用 nixos-unstable 构建,
+    # follows 到 26.05 会导致旧 quickshell/luau 编译出插件 API 只支持 3-4
+    # (mpvpaper 插件需 API 9)。保持官方 unstable 才能完整支持插件系统。
     noctalia = {
-      url = "github:noctalia-dev/noctalia-shell";
-      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:noctalia-dev/noctalia-shell/d0e88fb572a5506519bc14d8944dcf4c7b32b992";
     };
 
     # disko —— 声明式分区 & 格式化 (替代 install.sh 的手工分区逻辑)

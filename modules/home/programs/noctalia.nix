@@ -1,8 +1,31 @@
-# noctalia 配置 —— 壁纸 + 顶栏样式 + 分辨率切换按钮
-{ pkgs, noctalia, mainUser, ... }:
-{
+# noctalia 配置 —— 壁纸 + 顶栏样式 + 分辨率切换按钮 + GTK 明暗同步
+{ pkgs, noctalia, mainUser, lib, ... }:
+let
+  # GTK 明暗跟随 Noctalia 主题模式 (由 config.toml [hooks].theme_mode_changed 触发)
+  # NixOS 打包: store 可执行, home.packages 装到 ~/.nix-profile/bin/theme-sync
+  theme-sync = pkgs.writeShellApplication {
+    name = "theme-sync";
+    runtimeInputs = [ pkgs.glib pkgs.gsettings-desktop-schemas ];
+    text = ''
+      # gsettings 需能读到 org.gnome.desktop.interface schema
+      export GSETTINGS_SCHEMA_DIR="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas"
+      MODE=$(noctalia msg theme-mode-get 2>/dev/null || echo dark)
+      if [ "$MODE" = "light" ]; then
+        SCHEME="prefer-light"; GTK="adw-gtk3"
+      else
+        SCHEME="prefer-dark"; GTK="adw-gtk3-dark"
+      fi
+      gsettings set org.gnome.desktop.interface color-scheme "$SCHEME" 2>/dev/null || true
+      gsettings set org.gnome.desktop.interface gtk-theme "$GTK" 2>/dev/null || true
+    '';
+  };
+in {
   # 显示设置按钮: 分辨率/缩放 合并到一个菜单 (res-menu: niri msg + fuzzel 两级)
   home.packages = [
+    theme-sync
+    # 视频壁纸插件依赖 (noctalia/mpvpaper): mpvpaper 播放 + mpv 抽帧
+    pkgs.mpvpaper
+    pkgs.mpv
     (pkgs.writeShellApplication {
       name = "res-menu";
       runtimeInputs = [ pkgs.niri pkgs.fuzzel ];
@@ -37,13 +60,35 @@
   ];
 
   home.activation.createWallpaperDir = ''
-    mkdir -p /home/${mainUser}/wallpaper
+    mkdir -p /home/${mainUser}/wallpaper/video
     cp -n ${noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default}/share/noctalia/assets/noctalia-wallpaper.png /home/${mainUser}/wallpaper/ || true
   '';
 
   xdg.configFile."noctalia/config.toml".text = ''
     [theme]
     source = "wallpaper"
+
+    # 模板渲染: kitty/qt 动态取色 + fcitx NyxMellow 皮肤 (方案 A)。
+    # 刻意不含 starship: Noctalia 渲染 starship 会覆盖自定义 powerline palette (colors),
+    # 导致 format 引用的 color_* 失效 → 无彩色。starship.toml 完全由 home-manager
+    # 声明式管理 (见 starship.nix)。
+    # nyxmellow 模板由 fcitx5.nix 部署到 ~/.local/share/fcitx5/themes/nyxmellow/templates/,
+    # 渲染后 fcitx5 重启生效 (post_hook)。
+    [theme.templates]
+    builtin_ids = ["kitty", "qt"]
+
+    [theme.templates.user.nyxmellow_theme]
+    input_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/templates/theme.conf"
+    output_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/theme.conf"
+
+    [theme.templates.user.nyxmellow_panel]
+    input_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/templates/panel.svg"
+    output_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/panel.svg"
+
+    [theme.templates.user.nyxmellow_highlight]
+    input_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/templates/highlight.svg"
+    output_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/highlight.svg"
+    post_hook = "systemctl --user restart app-org.fcitx.Fcitx5@autostart.service 2>/dev/null || { pkill -f 'bin/fcitx5' 2>/dev/null; sleep 1; fcitx5 -d >/dev/null 2>&1 & }"
     # ============================================================
     # 壁纸
     # ============================================================
@@ -90,7 +135,7 @@
 
     start = ["launcher", "workspaces"]
     center = ["clock"]
-    end = ["media", "tray", "notifications", "clipboard", "network", "bluetooth", "volume", "brightness", "display"]
+    end = ["media", "tray", "notifications", "clipboard", "network", "bluetooth", "volume", "brightness", "display", "mpvpaper"]
 
     # ============================================================
     # 显示设置按钮 —— 分辨率/缩放 合并菜单 (res-menu: 两级 fuzzel)
@@ -100,6 +145,11 @@
     glyph   = "aspect-ratio"
     tooltip = "显示设置"
     command = "res-menu"
+
+    # 视频壁纸控制 widget (noctalia/mpvpaper 插件): 点击打开 picker 选视频/切换/停止
+    [widget.mpvpaper]
+    type  = "noctalia/mpvpaper:mpvpaper"
+    glyph = "movie"
 
     # ============================================================
     # 网络 widget —— 只显示图标 (网卡名称在悬浮提示中)
@@ -117,5 +167,24 @@
     auto_locate = true
     [widget.tray]
     drawer = false
+
+    # ============================================================
+    # 视频壁纸 (noctalia/mpvpaper 插件) —— 动态背景 + 帧取色
+    # 插件由 Noctalia 运行时从官方插件仓库拉取 (plugins source official)。
+    # extract_last_frame: 插件用 ffmpeg 抽视频帧, 经 noctalia.setWallpaper
+    # 设为 Noctalia 壁纸 → M3 取色 → 全生态 (fcitx/kitty/菜单) 随视频帧变色。
+    # 视频放入 ${mainUser}/wallpaper/video/ 即自动生效 (可在设置里切换)。
+    # ============================================================
+    [plugins]
+    enabled = ["noctalia/mpvpaper"]
+
+    [plugin_settings."noctalia/mpvpaper"]
+    video_directory = "/home/${mainUser}/wallpaper/video"
+    mute = true
+    extract_last_frame = true
+
+    # GTK 明暗跟随: Noctalia 切换明暗时同步 GSettings (libadwaita/GTK 应用)
+    [hooks]
+    theme_mode_changed = ["~/.nix-profile/bin/theme-sync"]
   '';
 }
