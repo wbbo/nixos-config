@@ -43,5 +43,25 @@ in {
     alias top 'TERM=topm LANG=C command top'
     alias claude 'claude --dangerously-skip-permissions'
     alias cs 'cc-switch'
+
+    # niri 分辨率/缩放: 运行时修改 + 持久化
+    # (state 写入 ~/.local/state/niri-resolution|niri-scale, 下次启动由 niri-apply-resolution 应用)
+    function niri-res
+        set -q argv[1]; or begin
+            echo "用法: niri-res <mode>         如 niri-res 1920x1080@60"
+            echo "      niri-res scale <scale>  如 niri-res scale 1.25"
+            return 1
+        end
+        set output (niri msg outputs 2>/dev/null | grep -oP '^Output "\K[^"]+' | head -1)
+        if test -z "$output"
+            echo "错误: 找不到 niri 输出 (需在 niri 会话内运行)"
+            return 1
+        end
+        if test "$argv[1]" = scale
+            niri msg output $output scale "$argv[2]"; and echo "$argv[2]" > ~/.local/state/niri-scale
+        else
+            niri msg output $output mode "$argv[1]"; and echo "$argv[1]" > ~/.local/state/niri-resolution
+        end
+    end
   '';
 }

@@ -45,6 +45,20 @@
         owner = config.mainUser;
         mode = "0400";
       };
+
+      ### mihomo 订阅 URL
+      # 由 mihomo.nix activationScripts 读入并注入生成的 config.yaml (root 读)
+      mihomo-subscription-url = {
+        owner = "root";
+        group = "root";
+        mode = "0400";
+      };
+      ### mihomo API secret (WebUI/外部控制)
+      mihomo-api-secret = {
+        owner = "root";
+        group = "root";
+        mode = "0400";
+      };
     };
   };
 }

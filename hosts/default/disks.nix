@@ -47,7 +47,9 @@
                   swap.swapfile.size = "16G";
                 };
                 "@snapshots" = {
-                  mountpoint = "/.snapshots";
+                  # 挂载在 /persist/.snapshots: 快照存储独立于数据卷 (@persist 的子卷挂载点)
+                  # 快照子卷与数据卷互不拖累: @persist 损坏/误删时快照仍可恢复
+                  mountpoint = "/persist/.snapshots";
                   mountOptions = [ "noatime" ];
                 };
               };

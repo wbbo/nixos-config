@@ -9,8 +9,9 @@
       echo "警告: $PERSIST_HOME 不可用, 跳过持久化"
       exit 0
     fi
-    # 编译链缓存/配置 (大、下载慢, 重装后保留): maven/gradle/rust/go/node/pnpm/npm/uv
-    for dir in .claude .m2 .gradle .rustup .cargo .nvm .local/share/nvm go .local/share/pnpm .npm .cache/uv; do
+    # 编译链缓存/配置 + 应用 state (大、下载慢, 重装后保留): maven/gradle/rust/go/node/pnpm/npm/uv
+    # .local/state: 应用运行时状态 (niri 分辨率、noctalia settings 等)
+    for dir in .claude .m2 .gradle .rustup .cargo .nvm .local/state .local/share/nvm go .local/share/pnpm .npm .cache/uv; do
       src="$HOME/$dir"
       dst="$PERSIST_HOME/$dir"
       if [ -L "$src" ] && [ "$(readlink "$src")" = "$dst" ]; then

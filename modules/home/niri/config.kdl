@@ -41,6 +41,15 @@ cursor {
     xcursor-size 24
 }
 
+// ================ 输出默认分辨率/缩放 (Virtual-1 = 当前虚拟显示器) ================
+// 运行时用 `niri-res <mode>` / `niri-res scale <scale>` 修改并持久化
+// (state 写入 ~/.local/state/niri-resolution|niri-scale,
+//  由 spawn-at-startup 的 niri-apply-resolution 在下次启动时应用覆盖默认)。
+output "Virtual-1" {
+    mode "1920x1080"
+    scale 1.0
+}
+
 // ================ 输入设备 ================
 input {
     keyboard {
@@ -67,6 +76,8 @@ overview {
 
 // ================ 启动项 ================
 spawn-at-startup "noctalia"
+// 应用持久化的分辨率 (若 ~/.local/state/niri-resolution 存在, 覆盖声明式默认)
+spawn-at-startup "niri-apply-resolution"
 
 // ================ 屏幕盖处理(laptop lid) ================
 switch-events {
@@ -155,6 +166,15 @@ layer-rule {
     match namespace="^noctalia-(bar-[^\"]+|notification|dock|panel|attached-panel|osd)$"
     background-effect {
         xray false
+    }
+}
+
+// 顶栏纯透明 + 防毛玻璃: noctalia background_opacity=0.0 (透明背景), niri blur false (无模糊)
+layer-rule {
+    match namespace="^noctalia-bar-default$"
+    shadow { off; }
+    background-effect {
+        blur false
     }
 }
 

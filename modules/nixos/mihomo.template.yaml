@@ -1,0 +1,104 @@
+tun: {auto-detect-interface: true, auto-route: true, device: "Mihomo", dns-hijack: ["any:53"], mtu: 1500, route-exclude-address: [], stack: "mixed", strict-route: false, enable: true}
+proxies:
+# 订阅
+proxy-providers: 
+  LX: {url: "$SUB_URL", type: http, interval: 14400} # 订阅 URL 由 activationScripts 用 sops 注入
+# 策略组
+proxy-groups: [{name: PROXY, exclude-filter: "(?i)^(.*(?:🏷|邀请|加入|限国外使用|港|距离下次重置|一元\\.com|yiyuanjichang\\.com|20倍|流量)).*", type: url-test, url: "http://www.gstatic.com/generate_204", expected-status: 204, interval: 14400, timeout: 10000, include-all: true, filter: "(?i)^(.*(?:)).*"}]
+rules:
+  # =============== 本地/调试/管理域名（最高优先级）===============
+  - GEOIP,private,DIRECT
+  - DOMAIN-SUFFIX,nsfocus.com,DIRECT
+  ## 代理 server 直连
+  ### 自建
+  - DOMAIN-SUFFIX,112021.xyz,DIRECT
+  - DOMAIN-SUFFIX,wbb.us.kg,DIRECT
+  - DOMAIN-SUFFIX,wbo.dpdns.org,DIRECT
+  ### 良心云
+  - DOMAIN-SUFFIX,lxy1015.top,DIRECT
+  - DOMAIN-SUFFIX,liangxin1.xyz,DIRECT
+  - IP-CIDR,62.164.143.251/32,DIRECT,no-resolve
+  - IP-CIDR,203.10.97.121/32,DIRECT,no-resolve
+
+  # =============== 特定 IP 直连（你的内网）=======================
+  - IP-CIDR,10.65.79.165/32,DIRECT,no-resolve
+  - IP-CIDR,206.119.160.196/32,DIRECT,no-resolve
+  - IP-CIDR,107.173.146.206/32,DIRECT,no-resolve
+  - IP-CIDR,10.65.79.165/32,DIRECT,no-resolve
+  
+  # =============== 特定进程直连（游戏/办公/安全软件）==============
+  - PROCESS-NAME,MpDefenderCoreService.exe,DIRECT
+  - PROCESS-NAME,GTA5_Enhanced.exe,DIRECT
+  - PROCESS-NAME,FiveM.exe,DIRECT
+  - PROCESS-NAME,Launcher.exe,DIRECT
+  - PROCESS-NAME,Wow.exe,DIRECT
+  - PROCESS-NAME,vcsc.exe,DIRECT
+  - PROCESS-NAME,Battle.net.exe,DIRECT
+  - PROCESS-NAME,ToDesk.exe,DIRECT
+  - PROCESS-NAME,WXWork.exe,DIRECT
+  - PROCESS-NAME,SunloginClient.exe,DIRECT
+  - PROCESS-NAME,AweSun.exe,DIRECT
+  - PROCESS-NAME,WeLink.exe,DIRECT
+  - PROCESS-NAME,NsfocusVPN.exe,DIRECT
+  - PROCESS-NAME,nsvpn.exe,DIRECT
+  - PROCESS-NAME,vpn_service.exe,DIRECT
+  # =============== 关键业务域名直连 =============================
+  - DOMAIN-KEYWORD,baidu,DIRECT
+  - DOMAIN-KEYWORD,deepseek,DIRECT
+  - DOMAIN-KEYWORD,mihoyo,DIRECT
+  - DOMAIN-KEYWORD,nsfocus,DIRECT
+  - DOMAIN-KEYWORD,bilibili,DIRECT
+  - DOMAIN,live.vhall.com,DIRECT
+  - DOMAIN,douyin.com,DIRECT
+  - DOMAIN,zhihu.com,DIRECT
+  - DOMAIN,yxt.com,DIRECT
+  - DOMAIN-KEYWORD,yunxuetang,DIRECT
+  - DOMAIN,api.ejiasu.net,DIRECT
+  - DOMAIN-KEYWORD,microsoft,DIRECT
+  # ===============         google        ========================
+  - DOMAIN-KEYWORD,google,PROXY
+  - DOMAIN-SUFFIX,gstatic.com,PROXY
+  # =============== 特殊代理需求（极少数）========================
+  - IP-CIDR,100.21.243.232/32,PROXY,no-resolve
+  - PROCESS-NAME,DarkSoulsII.exe,PROXY
+  - DOMAIN-KEYWORD,github,PROXY
+  # =============== 规则集（按优先级排序）========================
+  - RULE-SET,reject,REJECT # 广告/跟踪 域名
+  - RULE-SET,private,DIRECT # ← 替代 GEOIP,private，更全面
+  - RULE-SET,lancidr,DIRECT # 局域网 IP
+  - RULE-SET,cncidr,DIRECT # 中国 IP
+  - RULE-SET,icloud,DIRECT
+  - RULE-SET,apple,DIRECT
+  - RULE-SET,direct,DIRECT # 明确直连的域名
+  - RULE-SET,applications,DIRECT # 应用类直连（如 Steam）
+  - RULE-SET,google,PROXY # Google 全家桶
+  - RULE-SET,proxy,PROXY # 明确需代理的域名
+  - RULE-SET,telegramcidr,PROXY # Telegram IP
+  # =============== 地理 IP 最终兜底 ============================
+  - GEOIP,CN,DIRECT # 中国 IP 直连（双重保险）
+  - MATCH,PROXY # 其他全部走代理
+rule-providers:
+  reject: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt", path: ./ruleset/reject.yaml, interval: 86400}
+  icloud: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/icloud.txt", path: ./ruleset/icloud.yaml, interval: 86400}
+  apple: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/apple.txt", path: ./ruleset/apple.yaml, interval: 86400}
+  google: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/google.txt", path: ./ruleset/google.yaml, interval: 86400}
+  proxy: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt", path: ./ruleset/proxy.yaml, interval: 86400}
+  direct: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt", path: ./ruleset/direct.yaml, interval: 86400}
+  private: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt", path: ./ruleset/private.yaml, interval: 86400}
+  gfw: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt", path: ./ruleset/gfw.yaml, interval: 86400}
+  tld-not-cn: {type: http, behavior: domain, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt", path: ./ruleset/tld-not-cn.yaml, interval: 86400}
+  telegramcidr: {type: http, behavior: ipcidr, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt", path: ./ruleset/telegramcidr.yaml, interval: 86400}
+  cncidr: {type: http, behavior: ipcidr, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt", path: ./ruleset/cncidr.yaml, interval: 86400}
+  lancidr: {type: http, behavior: ipcidr, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt", path: ./ruleset/lancidr.yaml, interval: 86400}
+  applications: {type: http, behavior: classical, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/applications.txt", path: ./ruleset/applications.yaml, interval: 86400}
+dns: {default-nameserver: ["system", "223.6.6.6", "1.1.1.1", "8.8.8.8", "2400:3200::1", "2001:4860:4860::8888"], direct-nameserver: [], direct-nameserver-follow-policy: false, enable: true, enhanced-mode: "fake-ip", fake-ip-filter: ["*.lan", "*.local", "*.arpa", "time.*.com", "ntp.*.com", "time.*.com", "+.market.xiaomi.com", "localhost.ptlogin2.qq.com", "*.msftncsi.com", "www.msftconnecttest.com"], fake-ip-filter-mode: "blacklist", fake-ip-range: "198.18.0.1/16", fallback: [], fallback-filter: {domain: ["+.google.com", "+.facebook.com", "+.youtube.com"], geoip: true, geoip-code: "CN", ipcidr: ["240.0.0.0/4", "0.0.0.0/32"]}, ipv6: true, listen: ":53", nameserver: ["8.8.8.8", "https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"], prefer-h3: true, proxy-server-nameserver: ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query", "tls://223.5.5.5"], respect-rules: false, use-hosts: true, use-system-hosts: true}
+mode: rule
+mixed-port: 7897
+allow-lan: true
+log-level: silent
+ipv6: true
+external-controller: "127.0.0.1:9097" # 控制 API 只绑本机回环 (allow-lan 下代理端口仍对外)
+external-ui: ./ui # 本地托管 WebUI (metacubexd/yacd/zashboard, 经 BindPaths 进服务)
+secret: "$API_SECRET" # API 密钥, 由 activationScripts 用 sops 注入
+unified-delay: true
+profile: {store-selected: true}
