@@ -1,6 +1,6 @@
 # sops-nix 集成: 声明式 secret 管理
 # 加密的 secrets 文件签入 git, 部署时由主机 age 密钥自动解密到 /run/secrets/
-{ config, ... }:
+{ config, pkgs, ... }:
 {
   sops = {
     # 默认 secrets 文件 (相对于 flake root)
@@ -14,9 +14,15 @@
     secrets = {
       ### GitHub token netrc
       # Nix flake 拉取 GitHub inputs 时自动携带 token, 避免未认证 403
-      github-netrc = {
-        owner = "root";
-        group = "root";
+      # owner=mainUser: netrc 认证在 nix 客户端进程 (curl) 应用,
+      # 非特权 `nix flake update` 也要能读; root (nixos-rebuild) 不受权限限制
+      ### GitHub 凭据 (netrc 由 systemd github-netrc 服务生成三条目)
+      github-username = {
+        owner = config.mainUser;
+        mode = "0400";
+      };
+      github-token = {
+        owner = config.mainUser;
         mode = "0400";
       };
 
@@ -59,6 +65,28 @@
         group = "root";
         mode = "0400";
       };
+    };
+  };
+
+  # 从 github-username + github-token 生成三条目 netrc
+  # (netrc 协议需每个 host 独立 machine, 无法在值内合并;
+  #  只填一次 user+token, 三个 host 由服务生成, boot 时运行)
+  systemd.services.github-netrc = {
+    description = "Generate GitHub netrc (three hosts)";
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "github-netrc-gen" ''
+        TOKEN=$(cat /run/secrets/github-token)
+        USER=$(cat /run/secrets/github-username)
+        umask 077
+        : > /run/secrets/github-netrc
+        for host in api.github.com github.com codeload.github.com; do
+          echo "machine $host login $USER password $TOKEN" >> /run/secrets/github-netrc
+        done
+        chown ${config.mainUser}:users /run/secrets/github-netrc
+        chmod 0400 /run/secrets/github-netrc
+      '';
     };
   };
 }

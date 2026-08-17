@@ -32,6 +32,9 @@ help() {
   # 静默安装 (无人值守)
   sudo ${SCRIPT_NAME} -d /dev/sda -f
 
+  # 携带 GitHub token (可选, 避免匿名限流 403)
+  sudo env GITHUB_TOKEN=ghp_xxx ${SCRIPT_NAME} -d /dev/sda
+
 分区由 disko 声明式管理。主机名/主机目录自动从 flake.nix 读取,
 用户名/主机名可在 hosts/<hostDir>/local.nix 覆盖, secrets 安装后初始化 (见 README)。
 EOF
@@ -114,6 +117,20 @@ if [ "$ROOT_FSTYPE" = "tmpfs" ]; then
     || warn "tmpfs 扩容失败, 安装可能出现空间不足"
 fi
 
+# ---- GitHub token (可选): 安装期给 Live CD 的 nix 提供凭据 ----
+# sudo 默认清空环境变量, 需 `sudo env GITHUB_TOKEN=ghp_xxx ./install.sh ...` 传入。
+# access-tokens 一项即可: 分支解析与 tarball 下载均带 token 头 (fetcher 有凭据时
+# 统一走 api.github.com, 5000 次/h; 无凭据则回退匿名直链, 60 次/h)。
+# 凭据只活在 Live CD (tmpfs, 重启即焚); 常驻凭据装好后走 secrets.yaml (sops-nix)。
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  # 追加而非覆盖, 保留调用者已有的 NIX_CONFIG; 作用于脚本内全部 nix 调用
+  NIX_CONFIG="${NIX_CONFIG:+$NIX_CONFIG
+}access-tokens = github.com=$GITHUB_TOKEN"
+  export NIX_CONFIG
+  unset GITHUB_TOKEN   # 子进程统一经 NIX_CONFIG 获取, 避免多渠道泄漏
+  info "GitHub token 已启用 (access-tokens)"
+fi
+
 # ============================================================================
 # 阶段 2: disko 分区 & 格式化 & 挂载
 # ============================================================================
@@ -138,12 +155,10 @@ if [ "$FORCE" -eq 1 ]; then
   DISKO_FLAGS+=(--yes-wipe-all-disks)
 fi
 # --root-mountpoint 指向 /mnt (disko 在该路径下执行挂载)
-# 直接运行 flake 锁定的 disko (flake.nix 暴露 packages.<system>.disko):
-#   - 版本与 nixos-install 阶段一致 (都取自 flake.lock)
-#   - 不依赖 python3 解析 flake.lock
-#   - 避免 github: 引用解析分支时调 GitHub API (Live CD 无 netrc/token, 匿名限流 60/h/IP)
+# disko 官方用法, 拉取 github:nix-community/disko (master 最新):
+# 分支解析调 api.github.com, 建议携带 GITHUB_TOKEN 避免匿名限流 (见阶段 1)
 nix --extra-experimental-features "nix-command flakes" \
-  run "$SCRIPT_DIR#disko" -- "${DISKO_FLAGS[@]}" --root-mountpoint /mnt "$DISKO_TMP" \
+  run github:nix-community/disko -- "${DISKO_FLAGS[@]}" --root-mountpoint /mnt "$DISKO_TMP" \
   || die "disko 分区失败。请检查磁盘是否被占用 (reboot 后重试)。"
 
 mountpoint -q /mnt     || die "挂载失败: /mnt"

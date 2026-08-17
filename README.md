@@ -4,29 +4,49 @@
 
 按**两种使用场景**组织：全新安装 / 日常使用。用户名/主机名在 `hosts/default/local.nix` 定制，secrets 在 `secrets/`。
 
+> **这是完整的可分发 NixOS 桌面方案**：fork 到你的账户、填好 secrets，一条 `install.sh` 即可装出同款桌面。开始前先完成下方「准备工作」（约 10 分钟）。
+
+---
+
+## 准备工作（开始前完成，约 10 分钟）
+
+**准备 1 · Fork 本仓库**
+
+在 GitHub 仓库页面右上角点 **Fork**，把整套配置复制到你自己的账户下。后续所有定制都推送到**你的 fork**，而不是本仓库：
+
+- secrets 用你的 host key 加密，只有你的机器能解密——需要你自己的仓库来保存
+- 日常升级（`nix flake update`）会改动 `flake.lock`，同样要推送回你的 fork
+
+**准备 2 · 申请 GitHub token**
+
+1. 打开 [GitHub Tokens](https://github.com/settings/tokens) → **Generate new token (classic)**
+2. Note 填 `nixos`（随意）；Expiration 建议 `No expiration`（省心）或 90 天（到期后按场景二轮换）
+3. 勾选 **`public_repo`**（只读公开仓库，足够提升 API 限额）
+4. 点 **Generate token**，**立即复制** `ghp_` 开头的 token——关闭页面后不再显示
+
+token 用在两处：
+
+- **安装时（可选）**：`sudo env GITHUB_TOKEN=ghp_xxx ./install.sh ...`，避免 GitHub 匿名限流 403
+- **装好后（必需）**：填入 secrets 的 `github-netrc` 字段，`nix flake update` 升级时认证
+
 ---
 
 ## 场景一：全新安装（Live ISO · install.sh）
 
 > **适用**：新电脑或重装，从空盘安装 NixOS。
+> **要求**：x86_64 主机、EFI 启动、建议内存 8G+（不足自动创建 zram）；**目标磁盘会被整盘清空**。
 > **准备**：U 盘启动 NixOS 26.05 Live ISO，打开终端。
 > `install.sh` 只做：分区 → 硬件检测 → `nixos-install`（并固化 host key）。
 
-**第 1 步 · 确认联网**
-
-```bash
-ping -c 3 baidu.com
-```
-> 有响应即网络正常，继续。
-
-**第 2 步 · 克隆仓库**
+**第 1 步 · 克隆你的 fork（准备 1）**
 
 ```bash
 git clone https://github.com/<你的GitHub用户名>/nixos-config.git ~/nixos-config
 cd ~/nixos-config
 ```
+> clone 失败先排查网络（Live ISO 需先连 Wi-Fi 或插网线）。
 
-**第 3 步 · 准备 host key（secrets 解密凭据）**
+**第 2 步 · 准备 host key（secrets 解密凭据）**
 
 - **重装/换盘（有备份 host key）**：把备份的 `ssh_host_ed25519_key*` 复制回 Live CD 的 `/etc/ssh/`，`install.sh` 会固化到新系统（保证 secrets 可解密）。
 - **全新首装（无备份）**：Live CD 默认可能没有 host key，先生成它：
@@ -35,53 +55,54 @@ cd ~/nixos-config
   ```
   > `install.sh` **仅在 Live CD 检测到 host key 时**固化；否则新系统首启自行生成（届时 secrets 需按新 host key 重新加密）。
 
-**第 4 步 · 初始化 secrets（首次）**
+**第 3 步 · 初始化 secrets（首次）**
 
 ```bash
-# 4.1 登记 host key 公钥（把输出的 age1xxx 加入 .sops.yaml 的 age 列表，替换示例公钥）
+# 3.1 登记 host key 公钥（把输出的 age1xxx 加入 .sops.yaml 的 age 列表，替换示例公钥）
 nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age -c ssh-to-age -i /etc/ssh/ssh_host_ed25519_key.pub
 
-# 4.2 从模板创建 secrets.yaml 并编辑填值（保存自动加密）
-# 加密使用 .sops.yaml 登记的 recipients（4.1 已加入你的 host key）
+# 3.2 从模板创建 secrets.yaml 并编辑填值（保存自动加密）
+# 加密使用 .sops.yaml 登记的 recipients（3.1 已加入你的 host key）
 nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#sops nixpkgs#ssh-to-age -c sh -c '
     cp secrets/secrets.template.yaml secrets/secrets.yaml
     export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key"
     sops --encrypt --in-place secrets/secrets.yaml
-    sops secrets/secrets.yaml
+    EDITOR=vim sops secrets/secrets.yaml
   '
 ```
-> sops 会打开编辑器（nano），填**全部字段**后保存（Ctrl+O → Enter → Ctrl+X）：
+> sops 会打开 vim，填**全部字段**后保存（`:wq`）：
 > - `main-user-password-hash`：你的登录密码哈希。生成：`nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#whois -c mkpasswd -m yescrypt`（输入两次密码）
-> - `github-netrc`：GitHub token。格式 `machine github.com login 用户名 password ghp_xxx`（[生成 token](https://github.com/settings/tokens)，勾 `public_repo`）
+> - `github-netrc`：准备 2 申请的 token。格式（单条）：`machine api.github.com login 用户名 password ghp_xxx`（只用于 flake update 分支解析认证；tarball 下载匿名，不占 API 限流）
 > - `cc-switch-s3-access-key-id` / `cc-switch-s3-secret-access-key`：Cloudflare R2 访问密钥
-> - `cc-switch-s3-bucket`：R2 桶名（如 `wbo`）
+> - `cc-switch-s3-bucket`：R2 桶名（如 `xxx`）
 > - `cc-switch-s3-endpoint`：R2 endpoint（`https://<账户ID>.r2.cloudflarestorage.com`）
 
-**第 5 步 · 配置 local.nix（用户名 / 主机名）**
+**第 4 步 · 配置 local.nix（用户名 / 主机名）**
 
 编辑 `hosts/default/local.nix`：
 
 ```nix
 { lib, ... }: {
-  hostName = "wbb";               # 改成你的主机名
-  mainUser = lib.mkForce "alice"; # 改成你的用户名
+  hostName = "wbb";                 # 主机名
+  mainUser = lib.mkForce "wbb";     # 用户名 (覆盖模板默认 user)
+  mihomo-ui = "zashboard";          # mihomo WebUI: metacubexd / yacd / zashboard
 }
 ```
 
-**第 6 步 · 安装**
+**第 5 步 · 安装**
 
 ```bash
-sudo ./install.sh --disk /dev/sda    # 换成你的目标磁盘（如 /dev/sdb）
+# 使用准备 2 的 token，避免 GitHub 限流导致安装失败
+sudo env GITHUB_TOKEN=ghp_xxx ./install.sh -d /dev/sda -f    # 换成你的目标磁盘（如 /dev/sdb）
 ```
-> 脚本会列出磁盘要求确认，输入 `yes` 后开始：分区 → 检测硬件 → 安装 → 固化 host key。耗时较长，耐心等待。
-> 静默安装（跳过确认）：`sudo ./install.sh -d /dev/sda -f`
+> 不带 token 也可安装（`sudo ./install.sh -d /dev/sda`，匿名限流时建议带上，见准备 2）；`-f` 跳过磁盘确认，去掉则需输入 `yes`。安装耗时较长，耐心等待。
 
-**第 7 步 · 重启**
+**第 6 步 · 重启**
 
 ```bash
 reboot
 ```
-> 新系统首次启动用固化的 host key 解密 secrets，用第 5 步的用户名 + 第 4 步的密码登录。
+> 新系统首次启动用固化的 host key 解密 secrets，用第 4 步的用户名 + 第 3 步的密码登录。
 
 ---
 
@@ -89,7 +110,7 @@ reboot
 
 > **适用**：已装好并切换成功的系统，日常维护。所有命令在目标机器终端执行。
 
-**第 1 步 · 克隆仓库（首次在本机使用）**
+**第 1 步 · 克隆你的 fork（首次在本机使用）**
 
 ```bash
 git clone https://github.com/<你的GitHub用户名>/nixos-config.git ~/nixos-config
@@ -100,7 +121,7 @@ cd ~/nixos-config
 **第 2 步 · 日常更新（改配置后应用）**
 
 ```bash
-nix flake update                               # 更新 flake inputs（可选; 先 update 再 switch 才生效）
+nix flake update                               # 升级 flake inputs 版本（可选，含 noctalia 等）
 sudo nixos-rebuild switch --flake .#nixos    # 应用配置变更（改 .nix / local.nix 后）
 sudo nix-collect-garbage --delete-old          # 清理旧系统配置（保留当前）
 ```
@@ -109,20 +130,17 @@ sudo nix-collect-garbage --delete-old          # 清理旧系统配置（保留�
 **修改密码 / GitHub token（编辑 secrets）**
 
 ```bash
-nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age nixpkgs#sops -c sh -c '
-  export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key"
-  sops secrets/secrets.yaml
-'
+nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age nixpkgs#sops -c sh -c 'export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key" EDITOR=vim sops secrets/secrets.yaml'
 ```
 > 打开编辑器改任意字段（登录密码、GitHub token 等），保存自动加密 → `sudo nixos-rebuild switch --flake .#nixos` 生效。
-> GitHub token 失效（rebuild 报 401）时，改 `github-netrc` 字段里的 token 即可。新 token 在 [GitHub tokens](https://github.com/settings/tokens) 生成（勾 `public_repo`）。
+> GitHub token 失效（`nix flake update` 报 401/403；日常 rebuild 不受影响）时，改 `github-netrc` 字段里的 token 即可。新 token 在 [GitHub tokens](https://github.com/settings/tokens) 生成（勾 `public_repo`）。
 
 **重装 / 换设备前备份 host key**（secrets 解密凭据）
 
 ```bash
 sudo cp -a /etc/ssh/ssh_host_ed25519_key* /备份位置/
 ```
-> 重装时把它复制回 Live CD 的 `/etc/ssh/`（见场景一步骤 3，install.sh 会固化）；换设备见下。
+> 重装时把它复制回 Live CD 的 `/etc/ssh/`（见场景一第 2 步，install.sh 会固化）；换设备见下。
 
 **更换设备（新设备接管 secrets）**
 
@@ -130,9 +148,7 @@ sudo cp -a /etc/ssh/ssh_host_ed25519_key* /备份位置/
 2. 在旧设备（能解密的主机）上重加密：
 
    ```bash
-   SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key" \
-     nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#sops nixpkgs#ssh-to-age -c \
-     sops updatekeys secrets/secrets.yaml
+   SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key" nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#sops nixpkgs#ssh-to-age -c sops updatekeys secrets/secrets.yaml
    ```
    > 用**旧 host key** 派生（只有旧密钥能解密旧密文）。
 3. `git commit && git push`，新设备 pull 后即可解密。

@@ -153,18 +153,18 @@ host key 是解密 secrets 的凭据, 重装/换设备后 host key 变化会导�
 
 ### GitHub token 失效 (401) 排查与轮换
 
-**症状**: `nixos-rebuild switch` 报 `error: unable to download 'https://github.com/<org>/<repo>/archive/<rev>.tar.gz': HTTP error 401`, response body 为 `Deprecated authentication method. Create a Personal Access Token to access: https://github.com/settings/tokens`。
+**症状**: `nix flake update` (分支解析走 api.github.com) 报 HTTP error 401/403; 日常 rebuild 的 tarball 直链匿名下载不受影响。
 
-**根因**: `modules/nixos/nix.nix` 配置 `netrc-file = /run/secrets/github-netrc`, nix 对 GitHub 的所有请求 (含本可匿名下载的公开仓库) 都携带该凭据。`github-netrc` 中的 PAT 过期/被撤销后, 请求被统一 401。
+**根因**: `modules/nixos/nix.nix` 配置 `netrc-file = /run/secrets/github-netrc` (仅 `api.github.com` 条目), nix 的分支解析请求携带该凭据, PAT 过期/被撤销后 401。tarball 直链不带凭据, 故 rebuild 无感。
 
 **诊断** (在目标主机):
 ```bash
-sudo cat /run/secrets/github-netrc    # 查看当前凭据: machine github.com login <user> password <token>
+sudo cat /run/secrets/github-netrc    # 查看当前凭据: machine api.github.com login <user> password <token>
 curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer <token>" \
   https://api.github.com/user                        # 401 = token 失效
 curl -s -o /dev/null -w "%{http_code}\n" -L \
   https://github.com/nix-community/disko/archive/<rev>.tar.gz   # 200/302 = 网络正常
-sudo env NIX_CONFIG='netrc-file = /dev/null' nixos-rebuild switch --flake .#nixos  # 临时绕过, 验证根因
+NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 验证根因; 还原: git checkout flake.lock
 ```
 
 **轮换步骤**:
@@ -176,7 +176,7 @@ sudo env NIX_CONFIG='netrc-file = /dev/null' nixos-rebuild switch --flake .#nixo
      ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key > /tmp/age-priv.txt
      chmod 600 /tmp/age-priv.txt
      SOPS_AGE_KEY_FILE=/tmp/age-priv.txt sops set secrets/secrets.yaml \
-       "[\"github-netrc\"]" "\"machine github.com login <你的GitHub用户名> password github_pat_XXX\""
+       "[\"github-netrc\"]" "\"machine api.github.com login <你的GitHub用户名> password github_pat_XXX\""
      rm -f /tmp/age-priv.txt
    '
    ```
@@ -193,7 +193,7 @@ sudo env NIX_CONFIG='netrc-file = /dev/null' nixos-rebuild switch --flake .#nixo
 
 | Secret 名 | 用途 | 引用位置 |
 |-----------|------|---------|
-| `github-netrc` | GitHub token (提高 API 限速, 避免 403) | `modules/nixos/nix.nix` → `netrc-file` |
+| `github-netrc` | GitHub token netrc (仅 `api.github.com` 条目: flake update 分支解析认证; tarball 匿名) | `modules/nixos/nix.nix` → `netrc-file` |
 | `main-user-password-hash` | 用户密码哈希 | `modules/nixos/users.nix` → `hashedPasswordFile` |
 
 **sops-nix 模块:** `modules/nixos/secrets.nix` —— 声明 `sops.secrets.<name>`, 定义每个 secret 的权限和目标路径。
@@ -234,8 +234,9 @@ sudo env NIX_CONFIG='netrc-file = /dev/null' nixos-rebuild switch --flake .#nixo
 - **必须 git 仓库** 且会修复 `.git/index` 属主不一致 (libgit2 安全检查)
 - **内存 < 8G 时自动创建 zram swap** 防止编译 OOM
 - **自动 `git commit` 生成的 `hardware-configuration.nix`** 纳入版本控制
-- **分区由 disko 管理** —— install.sh 用 `nix run .#disko -- --mode zap_create_mount` (flake 锁定版本) 替代手工 parted/mkfs/btrfs
+- **分区由 disko 管理** —— install.sh 用 `nix run github:nix-community/disko -- --mode zap_create_mount` (master 最新版) 替代手工 parted/mkfs/btrfs
 - **root 无密码** (`--no-root-password`), 登录凭据仅通过主用户 (`mainUser`) 管理
+- **可选 `GITHUB_TOKEN` 环境变量** —— 安装期给 Live CD 的 nix 提供 GitHub 凭据: 脚本把 `access-tokens` 注入 `NIX_CONFIG` (分支解析与 tarball 均带 token), 作用于 disko 与 nixos-install 的全部拉取; 用 `sudo env GITHUB_TOKEN=... ./install.sh` 传入 (sudo 默认清空环境变量)
 
 ## hardware-configuration.nix
 
@@ -269,4 +270,4 @@ sudo env NIX_CONFIG='netrc-file = /dev/null' nixos-rebuild switch --flake .#nixo
 - GitHub token → `secrets/secrets.yaml` → `github-netrc` → 解密到 `/run/secrets/github-netrc`
 - 用户密码哈希 → `secrets/secrets.yaml` → `main-user-password-hash` → 解密到 `/run/secrets/main-user-password-hash`
 
-**换机器重装时:** 先在新主机生成 age 密钥, 把公钥加入 `.sops.yaml`, 用旧主机的私钥重新加密 secrets, 再 `git push`。
+**换机器/密钥变化时:** 流程见上方「换主机或密钥泄露」与「host key 变化处理」。
