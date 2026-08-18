@@ -172,7 +172,7 @@ nixos-config/
 │   ├── disks.nix                   #   disko 声明式分区布局
 │   └── hardware-configuration.nix  #   由 install.sh 生成
 ├── modules/
-│   ├── nixos/                      # 系统级模块 (main-user/networking/secrets/users/greetd/mihomo 等)
+│   ├── nixos/                      # 系统级模块 (main-user/networking/secrets/users/greetd/mihomo/flatpak 等)
 │   └── home/                       # Home Manager 用户级模块 (niri + programs)
 └── secrets/
     ├── secrets.template.yaml       # 明文模板 (分发用)
@@ -207,6 +207,7 @@ nixos-config/
 | 合成器 / 面板 | Niri (scrollable-tiling) + Noctalia v5 |
 | 输入法 | fcitx5 + 雾凇拼音 (rime-ice) |
 | 终端 / 启动器 | Kitty (Catppuccin) / Fuzzel |
+| 应用分发 | Flatpak + GNOME Software (Flathub) |
 | 休眠 | btrfs swapfile 16G + zramSwap 50% |
 | 快照 | Snapper @persist (12h + 7d + 4w + 6m) |
 | 时区 / Nix 镜像 | Asia/Shanghai / cernet + 官方 |

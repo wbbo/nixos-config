@@ -22,5 +22,6 @@
     ./packages.nix
     ./persist.nix
     ./docker.nix
+    ./flatpak.nix
   ];
 }
