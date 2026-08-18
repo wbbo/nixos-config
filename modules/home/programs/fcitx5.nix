@@ -83,9 +83,11 @@ in
   xdg.dataFile."fcitx5/themes/nyxmellow/templates/highlight.svg".source = ./fcitx5/nyxmellow/templates/highlight.svg;
 
   # fcitx5 UI 使用 NyxMellow 主题 (force 覆盖 GUI 生成)
+  # Font: 候选栏字体统一 Maple Mono NF CN (默认为 Sans → Noto Sans CJK SC)
   xdg.configFile."fcitx5/conf/classicui.conf" = {
     force = true;
     text = ''
+      Font="Maple Mono NF CN 12"
       Theme=nyxmellow
       DarkTheme=nyxmellow
       UseDarkTheme=False

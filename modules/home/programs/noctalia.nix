@@ -11,12 +11,15 @@ let
       export GSETTINGS_SCHEMA_DIR="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas"
       MODE=$(noctalia msg theme-mode-get 2>/dev/null || echo dark)
       if [ "$MODE" = "light" ]; then
-        SCHEME="prefer-light"; GTK="adw-gtk3"
+        SCHEME="prefer-light"; GTK="adw-gtk3"; PREFER_DARK="false"
       else
-        SCHEME="prefer-dark"; GTK="adw-gtk3-dark"
+        SCHEME="prefer-dark"; GTK="adw-gtk3-dark"; PREFER_DARK="true"
       fi
       gsettings set org.gnome.desktop.interface color-scheme "$SCHEME" 2>/dev/null || true
       gsettings set org.gnome.desktop.interface gtk-theme "$GTK" 2>/dev/null || true
+      # GTK3 prefers-color-scheme (Firefox 等 GTK3 应用读 settings.ini)
+      mkdir -p "$HOME/.config/gtk-3.0"
+      printf '[Settings]\ngtk-application-prefer-dark-theme=%s\n' "$PREFER_DARK" > "$HOME/.config/gtk-3.0/settings.ini"
     '';
   };
 in {
@@ -67,6 +70,8 @@ in {
   xdg.configFile."noctalia/config.toml".text = ''
     [theme]
     source = "wallpaper"
+    # muted: 低饱和柔和取色 (其余可选 m3-content/m3-tonal-spot/vibrant 等)
+    wallpaper_scheme = "muted"
 
     # 模板渲染: kitty/qt 动态取色 + fcitx NyxMellow 皮肤 (方案 A)。
     # 刻意不含 starship: Noctalia 渲染 starship 会覆盖自定义 powerline palette (colors),
@@ -108,6 +113,12 @@ in {
     recursive = true
 
     # ============================================================
+    # shell 全局字体 (通知/启动器/控制中心/锁屏等所有 Noctalia UI)
+    # ============================================================
+    [shell]
+    font_family = "Maple Mono NF CN"
+
+    # ============================================================
     # 顶栏 bar
     # ============================================================
     [bar.default]
@@ -144,7 +155,7 @@ in {
     type    = "custom_button"
     glyph   = "aspect-ratio"
     tooltip = "显示设置"
-    command = "res-menu"
+    left    = "exec res-menu"   # 新版: command 已改为 left gesture binding
 
     # 视频壁纸控制 widget (noctalia/mpvpaper 插件): 点击打开 picker 选视频/切换/停止
     [widget.mpvpaper]
@@ -183,8 +194,8 @@ in {
     mute = true
     extract_last_frame = true
 
-    # GTK 明暗跟随: Noctalia 切换明暗时同步 GSettings (libadwaita/GTK 应用)
+    # GTK 明暗跟随: Noctalia 切换明暗时同步 GSettings + GTK3 settings.ini (libadwaita/GTK/Firefox)
     [hooks]
-    theme_mode_changed = ["~/.nix-profile/bin/theme-sync"]
+    theme_mode_changed = ["theme-sync"]   # 注意: home-manager 包在 /etc/profiles, 非 ~/.nix-profile
   '';
 }

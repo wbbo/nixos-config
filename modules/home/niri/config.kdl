@@ -83,6 +83,8 @@ spawn-at-startup "noctalia"
 spawn-at-startup "niri-apply-resolution"
 // 对齐护眼状态: 修复 effects.kdl 链接 (若缺失) + 同步 wlsunset 色温
 spawn-at-startup "eye-care" "--sync"
+// polkit 认证代理: 授权 systemctl reboot/poweroff/suspend 等图形对话框
+spawn-at-startup "polkit-gnome-authentication-agent-1"
 
 // ================ 屏幕盖处理(laptop lid) ================
 switch-events {
