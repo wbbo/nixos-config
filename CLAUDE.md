@@ -120,22 +120,35 @@ nix shell nixpkgs#sops nixpkgs#ssh-to-age nixpkgs#nano -c sh -c '
 ### Live CD 全新安装
 
 `nixos-install` 阶段, sops-nix 从 host key 解密 secrets (`.sops.yaml` 需含该主机的 host key 公钥)。
+install.sh 会在 `nixos-install` **前**把 Live CD 上 `/etc/ssh/ssh_host_ed25519_key` 自动固化到
+目标系统 (`/mnt/etc/ssh/`, 首启时被 sshd 复用), 保证安装期与首启后的密钥一致。按是否有旧
+host key 分两种场景:
 
-**准备工作 (在旧主机上):**
+**场景 A: 重装同机 / 换盘 (已有旧 host key, secrets 用它加密)**
 
-```bash
-# 备份 host key 私钥 (secrets 解密凭据)
-sudo cat /etc/ssh/ssh_host_ed25519_key
-```
-
-**安装时 (Live CD 上):**
+先恢复旧 host key 到 Live CD 的 `/etc/ssh/`, 再安装 (install.sh 检测到后自动固化):
 
 ```bash
-# install.sh 只做分区 + 硬件检测 + 安装, 无需准备密钥
+# 旧主机上备份 (含私钥与公钥, secrets 解密凭据)
+sudo cat /etc/ssh/ssh_host_ed25519_key        # 保存私钥内容
+sudo cat /etc/ssh/ssh_host_ed25519_key.pub    # 保存公钥内容
+# Live CD 上写回 /etc/ssh/ (install.sh 从该路径读取固化)
+sudo install -m600 -o root -g root <私钥>  /etc/ssh/ssh_host_ed25519_key
+sudo install -m644 -o root -g root <公钥>  /etc/ssh/ssh_host_ed25519_key.pub
 sudo ./install.sh --disk /dev/sda
 ```
 
-**安装后 (首次启动)**: 系统自动生成 SSH host key, 按「首次设置」初始化 secrets (host key 公钥登记 `.sops.yaml` + 从模板加密 `secrets.yaml`), 再 `nixos-rebuild switch` 应用。
+安装期 sops 解密即成功 (无密钥警告), 重启后 `/run/secrets` 已就绪。
+
+**场景 B: 首次全新安装 / 无 host key (分发接收者)**
+
+install.sh 检测不到 host key 会跳过固化并警告, 安装期 sops 解密失败属预期:
+
+```bash
+sudo ./install.sh --disk /dev/sda
+```
+
+**安装后 (首次启动)**: 系统自动生成新 SSH host key, 按「首次设置」初始化 secrets (host key 公钥登记 `.sops.yaml` + 从模板加密 `secrets.yaml`), 再 `nixos-rebuild switch` 应用。
 
 ### 换主机或密钥泄露
 
@@ -147,7 +160,7 @@ sudo ./install.sh --disk /dev/sda
 
 host key 是解密 secrets 的凭据, 重装/换设备后 host key 变化会导致旧 secrets 无法解密。sops 支持**多 recipient**:
 
-- **同设备重装**: 重装前备份 `/etc/ssh/ssh_host_ed25519_key*`, 重装后写回并 `systemctl restart sshd`, host key 保持不变。
+- **同设备重装**: 重装前备份 `/etc/ssh/ssh_host_ed25519_key*`, 恢复到 Live CD 的 `/etc/ssh/` 后跑 install.sh —— 脚本会在 `nixos-install` 前自动固化该 key (见上方「场景 A」), 首启后密钥不变且安装期即可解密 secrets。
 - **更换设备**: 新设备 host key 公钥 (`ssh-to-age`) 加入 `.sops.yaml`, 旧设备用派生密钥 (`SOPS_AGE_KEY_FILE`) `sops updatekeys` 重新加密, commit+push 后新设备可解密。
 - **建议**: `.sops.yaml` 保留备用 recipient, 避免单点丢失。
 
@@ -155,11 +168,11 @@ host key 是解密 secrets 的凭据, 重装/换设备后 host key 变化会导�
 
 **症状**: `nix flake update` (分支解析走 api.github.com) 报 HTTP error 401/403; 日常 rebuild 的 tarball 直链匿名下载不受影响。
 
-**根因**: `modules/nixos/nix.nix` 配置 `netrc-file = /run/secrets/github-netrc` (仅 `api.github.com` 条目), nix 的分支解析请求携带该凭据, PAT 过期/被撤销后 401。tarball 直链不带凭据, 故 rebuild 无感。
+**根因**: `nix.nix` 配置 `netrc-file = /run/secrets/github-netrc` (由 systemd `github-netrc` 服务从 `github-username`/`github-token` 生成**三条目**: api.github.com + github.com + codeload.github.com), nix 的分支解析请求携带该凭据, PAT 过期/被撤销后 401。tarball 直链不带凭据, 故 rebuild 无感。
 
 **诊断** (在目标主机):
 ```bash
-sudo cat /run/secrets/github-netrc    # 查看当前凭据: machine api.github.com login <user> password <token>
+sudo cat /run/secrets/github-netrc    # 查看当前凭据 (三条目: api.github.com / github.com / codeload.github.com, 由 systemd 服务生成)
 curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer <token>" \
   https://api.github.com/user                        # 401 = token 失效
 curl -s -o /dev/null -w "%{http_code}\n" -L \
@@ -176,7 +189,7 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
      ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key > /tmp/age-priv.txt
      chmod 600 /tmp/age-priv.txt
      SOPS_AGE_KEY_FILE=/tmp/age-priv.txt sops set secrets/secrets.yaml \
-       "[\"github-netrc\"]" "\"machine api.github.com login <你的GitHub用户名> password github_pat_XXX\""
+       "[\"github-token\"]" "\"github_pat_XXX\""
      rm -f /tmp/age-priv.txt
    '
    ```
@@ -193,7 +206,8 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 
 | Secret 名 | 用途 | 引用位置 |
 |-----------|------|---------|
-| `github-netrc` | GitHub token netrc (仅 `api.github.com` 条目: flake update 分支解析认证; tarball 匿名) | `modules/nixos/nix.nix` → `netrc-file` |
+| `github-username` | GitHub 用户名 (systemd 生成 netrc 用) | `modules/nixos/secrets.nix` |
+| `github-token` | GitHub PAT (systemd `github-netrc` 服务据此生成三条目 netrc) | `modules/nixos/secrets.nix` → `systemd.services.github-netrc` → `nix.nix` `netrc-file` |
 | `main-user-password-hash` | 用户密码哈希 | `modules/nixos/users.nix` → `hashedPasswordFile` |
 
 **sops-nix 模块:** `modules/nixos/secrets.nix` —— 声明 `sops.secrets.<name>`, 定义每个 secret 的权限和目标路径。
@@ -202,14 +216,14 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 
 已有系统接管分发模板的步骤:
 
-0. **本机定制** (推荐): 创建 gitignored 的 `hosts/default/local.nix`, 覆盖 `hostName`/`mainUser` (类似 secrets 的本地化, 不入库):
+0. **本机定制**: 编辑 `hosts/default/local.nix` (非机密, 已纳入版本控制; 分发模板含默认值, 接收者改为自己的 hostName/mainUser):
    ```nix
    { lib, ... }: { hostName = "wbb"; mainUser = lib.mkForce "alice"; }
    ```
 1. 自定义用户名: 也可直接在 `hosts/default/configuration.nix` 中 `mainUser = lib.mkForce "<已有用户名>"` (覆盖默认 `user`)。
 2. 自定义主机名 (可选): 改 `flake.nix` 的 `let hostName`; `hostDir` 独立, 无需改目录名。
 3. 替换硬件配置: `nixos-generate-config --root /` 生成后 `cp` 到 `hosts/default/hardware-configuration.nix` (模板内为通用示例)。
-4. 初始化 secrets: `cp secrets/secrets.template.yaml secrets/secrets.yaml` → 填 `main-user-password-hash`/`github-netrc` → `sops -e -i`。
+4. 初始化 secrets: `cp secrets/secrets.template.yaml secrets/secrets.yaml` → 填 `main-user-password-hash`/`github-username`/`github-token` → `sops -e -i`。
 5. `sudo nixos-rebuild build --flake .#<hostName>` 验证 → `switch` 应用。
 
 **注意**: `users.nix` 用 `hashedPasswordFile` 设置 mainUser 密码, 会覆盖已有用户密码为 secrets 哈希; 家目录数据保留。用户名需与已有用户一致 (否则新建)。
@@ -242,9 +256,9 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 
 此文件由 `install.sh` 调用 `nixos-generate-config --root /mnt` 自动生成,然后提取 initrd/kernel 模块和 CPU 微码重写。迁移到不同硬件时删除此文件重新运行 `install.sh`,或在目标机器上运行 `nixos-generate-config` 后手动合并。
 
-## 与 install.md 的关系
+## 与安装方案的关系
 
-`install.md` 是手工装机文档(parted / mkfs / btrfs 子卷 / swapfile),是本配置的设计参考。`install.sh` 自动化整个安装流程,将 install.md 的分区方案实现为可复用的脚本。
+`install.sh` 自动化安装流程:分区/格式化/子卷/swapfile 由 **disko 声明式**(`hosts/default/disks.nix`)完成,非手写脚本。
 
 ## 脚本安装工具(cc-switch / claude)
 
@@ -267,7 +281,7 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 
 **所有敏感信息已通过 sops-nix + age 加密管理 (见上方"秘密管理"章节)。** 以下信息不再以明文签入 git:
 
-- GitHub token → `secrets/secrets.yaml` → `github-netrc` → 解密到 `/run/secrets/github-netrc`
+- GitHub token → `secrets/secrets.yaml` → `github-username`/`github-token` → systemd 生成 `/run/secrets/github-netrc`(三条目)
 - 用户密码哈希 → `secrets/secrets.yaml` → `main-user-password-hash` → 解密到 `/run/secrets/main-user-password-hash`
 
 **换机器/密钥变化时:** 流程见上方「换主机或密钥泄露」与「host key 变化处理」。

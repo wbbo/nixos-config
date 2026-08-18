@@ -42,9 +42,14 @@
     hostName = "nixos";
     # 物理主机目录 —— hosts/<hostDir>/ 下的配置目录 (可独立于 hostName 命名)
     hostDir = "default";
+    # 目标系统架构 (packages / nixosConfigurations 复用)
+    system = "x86_64-linux";
   in {
+    # 导出 disko 包: install.sh 用 `nix run .#disko` 做分区 (锁定版本, 避免拉 master 触发 403)
+    packages.${system}.disko = inputs.disko.packages.${system}.disko;
+
     nixosConfigurations.${hostName} = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
+      system = system;
       specialArgs = {
         inherit inputs;
         # hostName 经 specialArgs 下发到各模块 (networking.nix 等引用)

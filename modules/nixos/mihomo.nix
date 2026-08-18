@@ -52,7 +52,10 @@ in {
       ${pkgs.envsubst}/bin/envsubst '$SUB_URL $API_SECRET' < ${./mihomo.template.yaml} > /persist/etc/mihomo/config.yaml
       chmod 0600 /persist/etc/mihomo/config.yaml  # 含订阅 token/API secret, 仅 root 可读 (LoadCredential 由 root 读)
       # config 更新后重载 mihomo (绝对路径: activation PATH 无 systemd, 裸命令会 127)
-      /run/current-system/sw/bin/systemctl try-restart mihomo
+      # 首次安装 (nixos-install chroot) 时 /run/current-system 尚未建立, 热重载无意义, 跳过
+      if [ -x /run/current-system/sw/bin/systemctl ]; then
+        /run/current-system/sw/bin/systemctl try-restart mihomo
+      fi
     '';
 
     # 本地托管 WebUI: 所选面板链接到 /persist/etc/mihomo/data/ui,

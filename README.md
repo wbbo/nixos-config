@@ -63,7 +63,8 @@ nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age 
 
 # 3.2 从模板创建 secrets.yaml 并编辑填值（保存自动加密）
 # 加密使用 .sops.yaml 登记的 recipients（3.1 已加入你的 host key）
-nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#sops nixpkgs#ssh-to-age -c sh -c '
+# host key 私钥属 root: 需 sudo; vim 由 nix shell 提供
+sudo nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#sops nixpkgs#ssh-to-age nixpkgs#vim -c sh -c '
     cp secrets/secrets.template.yaml secrets/secrets.yaml
     export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key"
     sops --encrypt --in-place secrets/secrets.yaml
@@ -72,7 +73,7 @@ nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#sops nixpkg
 ```
 > sops 会打开 vim，填**全部字段**后保存（`:wq`）：
 > - `main-user-password-hash`：你的登录密码哈希。生成：`nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#whois -c mkpasswd -m yescrypt`（输入两次密码）
-> - `github-netrc`：准备 2 申请的 token。格式（单条）：`machine api.github.com login 用户名 password ghp_xxx`（只用于 flake update 分支解析认证；tarball 下载匿名，不占 API 限流）
+> - `github-username` / `github-token`：准备 2 申请的 GitHub 用户名与 token（systemd github-netrc 服务据此生成三条目 netrc：api.github.com / github.com / codeload.github.com，供 flake update 认证，缺任一都会限流）
 > - `cc-switch-s3-access-key-id` / `cc-switch-s3-secret-access-key`：Cloudflare R2 访问密钥
 > - `cc-switch-s3-bucket`：R2 桶名（如 `xxx`）
 > - `cc-switch-s3-endpoint`：R2 endpoint（`https://<账户ID>.r2.cloudflarestorage.com`）
@@ -130,10 +131,11 @@ sudo nix-collect-garbage --delete-old          # 清理旧系统配置（保留�
 **修改密码 / GitHub token（编辑 secrets）**
 
 ```bash
-nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age nixpkgs#sops -c sh -c 'export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key" EDITOR=vim sops secrets/secrets.yaml'
+cd nixos-config
+sudo nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#ssh-to-age nixpkgs#sops nixpkgs#vim -c sh -c 'export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key"; EDITOR=vim sops secrets/secrets.yaml'
 ```
 > 打开编辑器改任意字段（登录密码、GitHub token 等），保存自动加密 → `sudo nixos-rebuild switch --flake .#nixos` 生效。
-> GitHub token 失效（`nix flake update` 报 401/403；日常 rebuild 不受影响）时，改 `github-netrc` 字段里的 token 即可。新 token 在 [GitHub tokens](https://github.com/settings/tokens) 生成（勾 `public_repo`）。
+> GitHub token 失效（`nix flake update` 报 401/403；日常 rebuild 不受影响）时，改 `github-token` 字段即可（systemd github-netrc 服务会重新生成三条目 netrc）。新 token 在 [GitHub tokens](https://github.com/settings/tokens) 生成（勾 `public_repo`）。
 
 **重装 / 换设备前备份 host key**（secrets 解密凭据）
 
@@ -166,7 +168,7 @@ nixos-config/
 ├── .sops.yaml                      # sops 规则 (host key 派生的 age 公钥)
 ├── hosts/default/                  # 默认主机 (分发模板)
 │   ├── configuration.nix           #   入口: 硬件 + 系统模块 + Home Manager
-│   ├── local.nix                   #   本机定制 (用户名/主机名, 勿提交)
+│   ├── local.nix                   #   本机定制 (用户名/主机名, 非机密, 纳入版本控制)
 │   ├── disks.nix                   #   disko 声明式分区布局
 │   └── hardware-configuration.nix  #   由 install.sh 生成
 ├── modules/
@@ -189,7 +191,7 @@ nixos-config/
   - `@nix` → `/nix` (compress=zstd:3, noatime)
   - `@persist` → `/persist` (Snapper 保护, compress=zstd:3, noatime)
   - `@swap` → `/swap` (swapfile 16G, 不压缩)
-  - `@snapshots` → `/.snapshots`
+  - `@snapshots` → `/persist/.snapshots`
 
 `resume_offset` 由 initrd 脚本自动检测，换盘后重建即适配。
 
@@ -209,7 +211,7 @@ nixos-config/
 | 快照 | Snapper @persist (12h + 7d + 4w + 6m) |
 | 时区 / Nix 镜像 | Asia/Shanghai / cernet + 官方 |
 
-**自定义用户名/主机名**：都在 `hosts/default/local.nix` 改（`mainUser` + `hostName`），无需改 `flake.nix`（输出名固定 `.#nixos`）。改后 `switch` 生效，勿提交 `local.nix`。
+**自定义用户名/主机名**：都在 `hosts/default/local.nix` 改（`mainUser` + `hostName`），无需改 `flake.nix`（输出名固定 `.#nixos`）。改后 `switch` 生效。`local.nix` 非机密、纳入版本控制（分发模板自带默认值）。
 
 ---
 

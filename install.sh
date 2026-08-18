@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # NixOS 安装脚本 —— disko 分区 + nixos-install
-# 用法: sudo ./install.sh --disk /dev/sdb [-H HOSTNAME] [-D HOSTDIR] [-f]
+# 用法: sudo ./install.sh --disk /dev/sdb [-f]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -39,7 +39,7 @@ help() {
 用户名/主机名可在 hosts/<hostDir>/local.nix 覆盖, secrets 安装后初始化 (见 README)。
 EOF
 
-  exit 0
+  exit "${1:-0}"
 }
 
 FORCE=0; DISK=""
@@ -59,9 +59,9 @@ while true; do
   case "$1" in
     -d|--disk) DISK="$2"; shift 2 ;;
     -f|--force) FORCE=1; shift ;;
-    -h|--help) help ;;
+    -h|--help) help 0 ;;
     --) shift; break ;;
-    *) echo "未知选项: $1" >&2; help ;;
+    *) echo "未知选项: $1" >&2; help 1 ;;
   esac
 done
 
@@ -72,7 +72,7 @@ if [ -z "$DISK" ] && [ ${#REMAINING_ARGS[@]} -gt 0 ]; then
   [ ${#REMAINING_ARGS[@]} -gt 1 ] && warn "多余的参数将被忽略, 仅使用 $DISK"
 fi
 
-[ -n "$DISK" ] || help
+[ -n "$DISK" ] || help 1
 [ -b "$DISK" ] || die "磁盘 $DISK 不存在"
 [ "$(id -u)" = 0 ] || die "请用 sudo 运行"
 
@@ -137,7 +137,10 @@ fi
 info "[2/4] 分区: disko 格式化 $DISK 并挂载到 /mnt"
 
 # 清理残留挂载 (上次安装失败或中断可能留下)
-swapoff -a 2>/dev/null || true
+# 只关磁盘 swap, 保留阶段 1 创建的 zram (内存 <8G 防编译 OOM)
+for sw in $(swapon --show=NAME --noheadings 2>/dev/null | grep -v -E '^/dev/zram'); do
+  swapoff "$sw" 2>/dev/null || true
+done
 umount -R /mnt 2>/dev/null || true
 # 用实际设备路径替换 disks.nix 中的占位符
 DISKO_CFG="$SCRIPT_DIR/hosts/${HOST_DIR}/disks.nix"
@@ -155,10 +158,10 @@ if [ "$FORCE" -eq 1 ]; then
   DISKO_FLAGS+=(--yes-wipe-all-disks)
 fi
 # --root-mountpoint 指向 /mnt (disko 在该路径下执行挂载)
-# disko 官方用法, 拉取 github:nix-community/disko (master 最新):
-# 分支解析调 api.github.com, 建议携带 GITHUB_TOKEN 避免匿名限流 (见阶段 1)
+# 用 flake 锁定的 disko 包 (flake.nix 导出 inputs.disko): 避免拉 master 触发
+# GitHub API 匿名限流 403 (已修复过的回归), 且与 nixos-install 构建用的锁定版本一致。
 nix --extra-experimental-features "nix-command flakes" \
-  run github:nix-community/disko -- "${DISKO_FLAGS[@]}" --root-mountpoint /mnt "$DISKO_TMP" \
+  run "$SCRIPT_DIR#disko" -- "${DISKO_FLAGS[@]}" --root-mountpoint /mnt "$DISKO_TMP" \
   || die "disko 分区失败。请检查磁盘是否被占用 (reboot 后重试)。"
 
 mountpoint -q /mnt     || die "挂载失败: /mnt"
@@ -205,22 +208,24 @@ if [ -f "$HW_NIX" ]; then
   fi
   # 提取 boot.kernelModules (不含 initrd, 精确匹配行首)
   KERNEL_MODS=$(grep -E '^[[:space:]]*boot\.kernelModules[[:space:]]*=' "$HW_NIX" 2>/dev/null \
-    || echo '  boot.kernelModules = [ "kvm-intel" "kvm-amd" ];')
-  HAS_INTEL=$(grep -q 'intel.*updateMicrocode.*true' "$HW_NIX" 2>/dev/null && echo true || echo false)
-  HAS_AMD=$(grep -q 'amd.*updateMicrocode.*true' "$HW_NIX" 2>/dev/null && echo true || echo false)
+    || echo '  boot.kernelModules = [ ];')
+  # 用 /proc/cpuinfo 检测 CPU 厂商 (nixos-generate-config 的微码行是
+  # lib.mkDefault config.hardware.enableRedistributableFirmware, 无字面 true, 不能 grep)
+  HAS_INTEL=$(grep -qi "GenuineIntel" /proc/cpuinfo 2>/dev/null && echo true || echo false)
+  HAS_AMD=$(grep -qi "AuthenticAMD" /proc/cpuinfo 2>/dev/null && echo true || echo false)
 else
   warn "nixos-generate-config 失败, 使用默认硬件检测"
   INITRD_MODS='"ahci" "nvme" "sd_mod" "usb_storage" "usbhid" "uas"
     "xhci_pci" "ehci_pci" "iwlwifi" "iwlmvm" "iwldvm"'
-  KERNEL_MODS='  boot.kernelModules = [ "kvm-intel" "kvm-amd" ];'
+  KERNEL_MODS='  boot.kernelModules = [ ];'
   HAS_INTEL=$(grep -qi "GenuineIntel" /proc/cpuinfo 2>/dev/null && echo true || echo false)
   HAS_AMD=$(grep -qi "AuthenticAMD" /proc/cpuinfo 2>/dev/null && echo true || echo false)
 fi
 
 # ---- 从 disks.nix 提取文件系统, 写入 supportedFilesystems ----
 # 解析 disks.nix 中的 format / type 字段, 提取全部文件系统
-DISKO_FS="$(awk '/format =|type =.*"(btrfs|ext4|xfs|f2fs|vfat|ntfs|zfs|tmpfs|exfat)"/   { gsub(/[";]/,"",$3); printf "\"%s\" ", $3 }' "$DISKO_CFG" | sort -u | tr '
-' ' ')"
+# 每行一个 (printf 换行) 让 sort -u 按行去重, 且保留双引号 (Nix 列表需要字符串字面量)
+DISKO_FS="$(awk '/format =|type =.*"(btrfs|ext4|xfs|f2fs|vfat|ntfs|zfs|tmpfs|exfat)"/ { gsub(/[";]/,"",$3); printf "\"%s\"\n", $3 }' "$DISKO_CFG" | sort -u | tr '\n' ' ')"
 
 info "检测到文件系统: ${DISKO_FS}"
 
@@ -267,7 +272,11 @@ if [ -d "$SCRIPT_DIR/.git" ]; then
     die "hardware-configuration.nix 未能添加到 git, 无法继续安装"
   fi
 
-  if git -C "$SCRIPT_DIR" \
+  # 有暂存变更才 commit: 重装同机时 hardware-configuration.nix 与已有记录
+  # 可能完全一致 (git commit 会报 nothing to commit), 此时跳过继续安装
+  if git -C "$SCRIPT_DIR" diff --cached --quiet; then
+    info "无暂存变更, 跳过 git commit (hardware-configuration.nix 与已记录内容一致)"
+  elif git -C "$SCRIPT_DIR" \
     -c user.email="install@nixos.local" \
     -c user.name="NixOS Installer" \
     commit -m "install: hardware-configuration for $(hostname)"; then
@@ -303,29 +312,40 @@ export GOPROXY="https://goproxy.cn,direct"
 # 将其删除, 确保系统只使用 flake 配置
 rm -f /mnt/etc/nixos/configuration.nix 2>/dev/null || true
 rm -f /mnt/etc/NIXOS 2>/dev/null || true
-nixos-install --flake ".#${HOST_NAME}" --no-channel-copy --no-root-password
 
-# ---- host key 固化: 新系统使用 Live CD 的 host key (secrets 解密一致性) ----
-# 新系统首次启动默认重新生成 host key; 若 secrets 已用 Live CD 的 host key 公钥
-# 加密 (见 README 安装步骤), 必须把该 host key 复制到目标系统, 否则无法解密。
+# ---- host key 固化: nixos-install 前放入 chroot (secrets 解密一致性) ----
+# nixos-install 的 activation 阶段 sops-install-secrets 即需读取 chroot 的
+# /etc/ssh/ssh_host_ed25519_key 派生 age 密钥解密 secrets (secrets.nix 的
+# sops.age.sshKeyPaths)。全新格式化的盘上此刻尚无 host key, 不提前放入则
+# 安装期解密必失败 (Cannot read ssh key / 0 successful groups); 固化后的
+# key 在首启时被 sshd 复用, 与 secrets 加密公钥保持一致。
 # 重装/换盘场景: 先在 Live CD 上恢复旧 host key 到 /etc/ssh/ 再运行本脚本。
 if [ -f /etc/ssh/ssh_host_ed25519_key ]; then
   info "固化 SSH host key 到目标系统 (secrets 解密一致性)"
   mkdir -p /mnt/etc/ssh
   cp -a /etc/ssh/ssh_host_ed25519_key* /mnt/etc/ssh/ 2>/dev/null \
-    || warn "host key 复制失败, 新系统将重新生成 (需重装后重新初始化 secrets)"
+    || warn "host key 复制失败, 新系统将重新生成 (需重启后重新初始化 secrets)"
+  # rsa key 一并固化 (若存在), 消除 sops-install-secrets 扫描 rsa 的噪音警告
+  cp -a /etc/ssh/ssh_host_rsa_key* /mnt/etc/ssh/ 2>/dev/null || true
+else
+  warn "Live CD 无 /etc/ssh/ssh_host_ed25519_key (重装/换盘应先恢复旧 key)"
+  warn "安装期 sops 解密将失败; 重启后需按 README 初始化 secrets (host key 公钥 + 模板)"
 fi
+
+nixos-install --flake ".#${HOST_NAME}" --no-channel-copy --no-root-password
 
 swapoff "$SWAPFILE" 2>/dev/null || true
 swapoff /dev/zram0 2>/dev/null || true
 
 echo ""; info "安装完成!"; echo ""
-echo "> SSH host key 警告说明:"
-echo "   安装过程中可能出现 'Cannot read ssh key' 警告，这是正常的。"
-echo "   系统在首次启动时由 systemd 自动生成 host key，安装阶段尚不存在。"
+if [ -f /mnt/etc/ssh/ssh_host_ed25519_key ]; then
+  echo "> SSH host key 已固化到目标系统, 安装期 secrets 解密应已成功。"
+else
+  echo "> SSH host key 未固化 (Live CD 上无 host key), 安装期 sops 解密已失败。"
+  echo "   重启后需按 README 初始化 secrets (host key 公钥 + secrets 模板) 再 rebuild。"
+fi
 echo ""
 echo "下一步:"
 echo "  reboot"
 echo ""
-echo "重启后: 按 README 初始化 secrets (SSH host key 公钥 + secrets 模板),"
-echo "        并配置 hosts/${HOST_DIR}/local.nix (用户名/主机名)。"
+echo "重启后: 确认 /run/secrets 正常解密, 并按需配置 hosts/${HOST_DIR}/local.nix (用户名/主机名)。"
