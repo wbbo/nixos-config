@@ -1,4 +1,6 @@
-# 应用启动器 fuzzel(Catppuccin Mocha)
+# fuzzel —— 通用选择器 (--dmenu 模式), 供 res-menu(显示设置)两级菜单使用。
+# 应用启动器已由 Noctalia launcher (Mod+Space) 承担, 不再作为独立启动器。
+# 样式 (Catppuccin Mocha) 同时作用于 dmenu 弹出菜单。
 { pkgs, ... }:
 {
   programs.fuzzel = {

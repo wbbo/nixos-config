@@ -209,6 +209,12 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 | `github-username` | GitHub 用户名 (systemd 生成 netrc 用) | `modules/nixos/secrets.nix` |
 | `github-token` | GitHub PAT (systemd `github-netrc` 服务据此生成三条目 netrc) | `modules/nixos/secrets.nix` → `systemd.services.github-netrc` → `nix.nix` `netrc-file` |
 | `main-user-password-hash` | 用户密码哈希 | `modules/nixos/users.nix` → `hashedPasswordFile` |
+| `cc-switch-s3-access-key-id` | cc-switch S3 (Cloudflare R2) 凭据 | `modules/home/programs/cc-switch.nix` → 激活钩子 |
+| `cc-switch-s3-secret-access-key` | cc-switch S3 (Cloudflare R2) 凭据 | `modules/home/programs/cc-switch.nix` → 激活钩子 |
+| `cc-switch-s3-bucket` | cc-switch S3 桶名 (R2) | `modules/home/programs/cc-switch.nix` → 激活钩子 |
+| `cc-switch-s3-endpoint` | cc-switch S3 端点 (R2) | `modules/home/programs/cc-switch.nix` → 激活钩子 |
+| `mihomo-subscription-url` | mihomo 订阅 URL (激活时生成 config.yaml) | `modules/nixos/mihomo.nix` → `activationScripts.mihomo-config` |
+| `mihomo-api-secret` | mihomo API secret (WebUI/外部控制) | `modules/nixos/mihomo.nix` → `activationScripts.mihomo-config` |
 
 **sops-nix 模块:** `modules/nixos/secrets.nix` —— 声明 `sops.secrets.<name>`, 定义每个 secret 的权限和目标路径。
 
@@ -270,9 +276,11 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 | cc-switch | `curl -fsSL https://github.com/SaladDay/cc-switch-cli/releases/latest/download/install.sh \| bash` | Claude Code 配置切换 + 用量查询 |
 | claude | `curl -fsSL https://claude.ai/install.sh \| bash` | Claude Code CLI(native installer) |
 
-**固化方式**:`modules/home/programs/cc-switch-claude.nix` 提供 home-manager 激活钩子
-(`home.activation.installScriptTools`),每次 switch 时检查 `~/.local/bin` 里两个工具是否缺失,
-**缺失才补装**(失败不阻断 switch)。新装机/重装后一条 `nixos-rebuild switch` 即可复现。
+**固化方式**:`modules/home/programs/cc-switch.nix`(`installCcSwitch` 钩子, 含 S3 云同步
+自动配置)与 `modules/home/programs/claude.nix`(`installClaude` 钩子)分别提供 home-manager
+激活钩子,每次 switch 时检查 `~/.local/bin` 里工具是否缺失,**缺失才补装**(失败不阻断
+switch,curl 带 `--connect-timeout 5 --max-time 30` 防网络吊死拖慢登录)。新装机/重装后
+一条 `nixos-rebuild switch` 即可复现。
 
 > 注意:这两个是脚本装的非声明式工具(自带自更新),换机重装时由激活钩子自动补装;
 > 若需手动重装,用上面的 curl 命令即可。

@@ -18,11 +18,19 @@
     };
   };
 
-  # 防止 greetd 快速重启触发 systemd rate-limit 导致隔次黑屏
-  systemd.services.greetd.serviceConfig = {
-    StartLimitBurst = 20;
-    StartLimitIntervalSec = 30;
-    KillMode = "mixed";
-    KillSignal = "SIGTERM";
+  # 排序说明: HM 模块自带 before=systemd-user-sessions, NixOS greetd 模块自带
+  # after=systemd-user-sessions, 传递序天然保证 greetd 晚于 home-manager 激活
+  # (首次 boot 空家目录时 niri 不会抢在 symlink 建立前生成默认配置);
+  # 不加显式 after/wants: 手工拼 "home-manager-<user>.service" 在用户名含 '-'
+  # 时与 HM 的 escapeSystemdPath 命名不一致, 依赖会静默落空。
+
+  # 防 greetd 快速重启触发 systemd rate-limit 导致隔次黑屏。
+  # StartLimit* 必须在 unit 级: [Service] 段不识别 (journal 实证报
+  # "Unknown key ... in section [Service], ignoring"), 放 serviceConfig 从未生效。
+  systemd.services.greetd = {
+    startLimitBurst = 20;
+    startLimitIntervalSec = 30;
+    # mixed: 主进程先 TERM (systemd 默认信号, 无需显式 KillSignal) + 剩余进程 KILL, 清理 niri-session 残留
+    serviceConfig.KillMode = "mixed";
   };
 }

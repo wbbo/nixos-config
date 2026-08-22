@@ -4,7 +4,6 @@ binds {
     Mod+T              { spawn "kitty"; }
     Mod+Return         { spawn "kitty"; }
     Mod+Slash          { spawn "kitty" "--single-instance"; }
-    Mod+Z              { spawn "fuzzel"; }
     Mod+E              { spawn "nautilus"; }
     Mod+B              { spawn "firefox"; }
 
