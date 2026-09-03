@@ -13,9 +13,10 @@
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
         # 教育网镜像复用 cache.nixos.org 的公钥,无需额外条目
       ];
-      # GitHub token 提高 API 速率限制,避免 403
-      # token 由 sops-nix 解密到 /run/secrets/github-netrc，此处引用
-      netrc-file = config.sops.secrets.github-netrc.path;
+      # netrc: 由 systemd github-netrc 服务从 github-username/token 生成
+      # (见 secrets.nix)。三条目: api.github.com (API) + github.com (archive 入口)
+      # + codeload.github.com (实际下载 tarball), 缺任一都会限流。
+      netrc-file = "/run/secrets/github-netrc";
       auto-optimise-store = true;
     };
 

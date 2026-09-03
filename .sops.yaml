@@ -1,35 +1,40 @@
-# SOPS 创建规则 —— 指定 encrypt 时使用哪些 age 公钥
-# 参考: https://github.com/Mic92/sops-nix
+# SOPS 创建规则 —— 加密 secrets.yaml 使用的 age 公钥 (recipient) 列表。
 #
-# 设置步骤:
-#   1. 生成 age 密钥对:
-#      mkdir -p ~/.config/sops/age
-#      nix shell nixpkgs#age --command age-keygen -o ~/.config/sops/age/keys.txt
-#      # 公钥: cat ~/.config/sops/age/keys.txt | grep "public key" | awk '{print $NF}'
-#      # 私钥: 文件中的 AGE-SECRET-KEY-1... 行（绝对不能泄露）
+# 密钥体系: 本项目用 SSH 主机密钥 (host key) 派生 age 密钥。
+#   公钥 = ssh-to-age -i /etc/ssh/ssh_host_ed25519_key.pub
+#   私钥 = ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key
+#   (sops-nix 部署时自动用 host key 解密, 无需单独 age 密钥对)
 #
-#   2. 将公钥加入下方 age: 列表:
-#      creation_rules:
-#        - path_regex: secrets/secrets\.yaml$
-#          age:
-#            - age1你的公钥
+# 追加新接收者 (新机器 / 备用 key):
+#   1. 新机器上生成公钥 (见上), 换行追加到下方 age 块: 前一行补逗号,
+#      新行缩进与现有 key 对齐
+#   2. sops updatekeys secrets/secrets.yaml 按完整 recipient 集重新加密
+#      (需任一旧 key 派生的 SOPS_AGE_KEY_FILE)
+#   3. 删除接收者同样编辑 + updatekeys, 被删 key 即刻失去解密权
 #
-#   3. 首次加密:
-#      nix shell nixpkgs#sops --command sops -e -i secrets/secrets.yaml
+# 格式红线 (实测踩坑):
+#   - age 值必须是「逗号分隔的 string」—— sops 的 creationRule.age 为 string
+#     类型, 用 >- 折叠标量换行书写: 解析时换行折叠为空格, 得到 "key1, key2" 单个
+#     string; 折叠块内不能写 # 注释 (会被当作 key 内容)
 #
-#   4. 后续编辑:
-#      nix shell nixpkgs#sops --command sops secrets/secrets.yaml
+# >- 折叠标量写法示范 (多 recipient):
+#   记号: > = 每个换行折叠为一个空格; - = 剥离块末尾的最终换行
+#   单 key (当前):                    age: >-
+#                                      age12wxr8medgg97ala9r6wnsauast8v7x6l29jcvcgk6hrv7vfzzdsqhtrytf
+#   → 解析为: "age12wxr8medgg97ala9r6wnsauast8v7x6l29jcvcgk6hrv7vfzzdsqhtrytf"
+#   多 key (追加后):                  age: >-
+#                                      age12wxr8medgg97ala9r6wnsauast8v7x6l29jcvcgk6hrv7vfzzdsqhtrytf,
+#                                      age1NEWXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXNOTE
+#   → 解析为: "age12wxr8me..., age1NEWXXX..." (逗号+换行折叠成 ", ", 恰为分隔)
 #
-# 已有的 age 公钥（自动解密）：
-#   - ~/.config/sops/age/keys.txt         # 用户级
-#   - /root/.config/sops/age/keys.txt     # install.sh 自动持久化
+# 注意点:
+#   - 逗号必须紧跟在上一 key 末尾 (漏逗号 → 折叠成 "key1 key2" 一个损坏的
+#     recipient, 解密时 key 不匹配)
+#   - 新 key 行缩进与首 key 完全对齐 (6 空格, 即 age: 后内容的缩进深度)
+#   - 折叠块内不能写 # 注释 (会被吞进 recipient 值, 污染密钥列表)
+#   - 追加/删除 recipient 后必须 sops updatekeys 重新加密 (见上方流程)
 
 creation_rules:
   - path_regex: secrets/secrets\.yaml$
-    age:
-      # 方案 B: 使用 SSH 主机密钥 (host key) 替代 age 密钥对
-      # 由 /etc/ssh/ssh_host_ed25519_key.pub 经 `ssh-to-age -i` 转换得到
-      # sops-nix 部署时自动用 host key 派生 age 密钥解密 (无需单独的 age keys.txt)
-      # 分发接收者: 用自己主机的 `ssh-to-age -i /etc/ssh/ssh_host_ed25519_key.pub` 生成并替换
-      - age1763wm76c7n4susu6mtu6lg3mkhus6va2ttxqm0azkcemw9prwans80cjps
-      - age12wxr8medgg97ala9r6wnsauast8v7x6l29jcvcgk6hrv7vfzzdsqhtrytf
+    age: >-
+      age12wxr8medgg97ala9r6wnsauast8v7x6l29jcvcgk6hrv7vfzzdsqhtrytf
