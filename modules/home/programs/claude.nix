@@ -43,7 +43,7 @@
         # 呈 failed (systemctl --user --failed 可见), rebuild 会 restart 本服务重试
         ${pkgs.curl}/bin/curl --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 3 --retry-max-time 60 --retry-all-errors -fsSL \
           https://claude.ai/install.sh | ${pkgs.coreutils}/bin/timeout 120 ${pkgs.bash}/bin/bash \
-          || { echo "警告: claude 安装失败 (journalctl --user -u claude-install); 重试: ./scripts/rebuild.sh 或 systemctl --user restart claude-install"; exit 1; }
+          || { echo "警告: claude 安装失败 (journalctl --user -u claude-install); 重试: ./build.sh 或 systemctl --user restart claude-install"; exit 1; }
       '';
     };
     Install.WantedBy = [ "default.target" ];

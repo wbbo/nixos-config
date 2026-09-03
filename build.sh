@@ -1,18 +1,60 @@
 #!/usr/bin/env bash
-# rebuild wrapper: 硬件适配 (adapt-hardware.sh) + nixos-rebuild switch
-# 用法: ./scripts/rebuild.sh [nixos-rebuild 额外参数...]
-# 每次 switch 前自动按当前硬件更新配置 (模块/hostPlatform/swapfile 大小, 写入
-# 工作区, 构建后还原), 换硬件/加内存后直接 rebuild 即自动适配。
+# NixOS 统一入口: Live CD → 全新安装 (install.sh); 已装系统 → 日常 switch
+# 用法: ./build.sh [-d /dev/xxx] [nixos-rebuild 额外参数...]
+# - 检测到 Live CD 环境自动转入 install.sh (需 -d 指定磁盘), 装完重启后
+#   同一命令自动转为日常重建 —— 分发接收者只需记一个入口。
+# - 已装系统: 每次 switch 前自动硬件适配 (模块/hostPlatform/swapfile 大小/
+#   resume_offset, 写入工作区, 构建后还原), 换硬件/加内存后直接 build 即适配。
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # 公共函数 (host_name 等), 与 install.sh / adapt-hardware.sh 共用
 source "$SCRIPT_DIR/scripts/common.sh"
 
+help() {
+  cat >&2 <<EOF
+  NixOS 统一入口 —— 环境感知: Live CD 安装 / 已装系统日常重建
+
+用法 (环境感知, 按运行环境二选一):
+  # Live CD 全新安装 (需 root, 参数转 install.sh)
+  ${0##*/} -d /dev/xxx
+  # 已装系统日常重建 (额外参数原样透传 nixos-rebuild)
+  ${0##*/} [nixos-rebuild 额外参数...]
+
+环境感知:
+  Live CD (根为 tmpfs)    → 自动转入 install.sh 全新安装
+  已装系统 (磁盘根)        → 硬件适配 + nixos-rebuild switch (日常更新)
+
+选项:
+  -d, --disk <设备>       目标磁盘设备 (仅 Live 安装模式, 必需)
+  -h, --help               显示本帮助
+
+说明: 全盘确认必须人工参与 ([Y/n] 交互, 无静默跳过开关);
+无人值守安装需先人工清盘, 日常重建参数 (如 --build-host ...) 经透传生效。
+EOF
+  exit "${1:-0}"
+}
+
+# -h/--help 在任何环境先拦截 (Live 下不再落入 install.sh 的帮助)
+for _arg in "$@"; do
+  case "$_arg" in
+    -h | --help) help 0 ;;
+  esac
+done
+
+# ---- 环境感知分流: Live CD → 安装流程 ----
+# 判据 (两者任一即 Live): 根为 tmpfs (Live 内存盘) 或存在 /nix/.ro-store
+# (ISO squashfs 只读 store 层)。已装系统根为磁盘文件系统且无 overlay store,
+# 两者皆假, 稳走下方日常重建。
+if [ "$(findmnt -no FSTYPE / 2>/dev/null || true)" = "tmpfs" ] || [ -d /nix/.ro-store ]; then
+  info "检测到 Live CD 环境, 转入全新安装流程 (install.sh)"
+  exec "$SCRIPT_DIR/scripts/install.sh" "$@"
+fi
+
 # 预热 sudo 缓存: adapt-hardware.sh 的 resume_offset 探测需 root 挂载 @swap,
-# 提前在此输入密码 (rebuild 本就要密码), 探测走 sudo -n 免密; 无 tty 时
+# 提前在此输入密码 (build 本就要密码), 探测走 sudo -n 免密; 无 tty 时
 # (CI/自动化) sudo -v 失败也不阻断, 探测跳过并保留占位, hibernate-now 运行时告警兜底。
 sudo -v || true
 

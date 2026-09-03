@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # 构建并切换到当前配置(同时应用系统+Home Manager)
 # 每次 switch 前自动硬件适配 (模块/hostPlatform/swapfile 大小/resume_offset, 见 scripts/adapt-hardware.sh)
-./scripts/rebuild.sh
+./build.sh
 
 # 仅构建、不切换(CI/验证; 硬件配置如需更新先跑 scripts/adapt-hardware.sh)
 nixos-rebuild build --flake .#nixos
@@ -42,8 +42,9 @@ flake.nix                          # 入口: hostName/hostDir 定义 → nixosCo
 │   ├── secrets.template.yaml      # 明文模板 (分发用)
 │   └── secrets.yaml               # 本地初始化, 不入库 (gitignore)
 ├── scripts/
-│   ├── adapt-hardware.sh          # 硬件适配: 检测→重写硬件配置+swapfile (构建后还原)
-│   └── rebuild.sh                 # 适配 + nixos-rebuild switch (替代直接调用)
+│   ├── install.sh                  # 全新安装流程 (disko + nixos-install; 统一入口在 Live 下转到此)
+│   └── adapt-hardware.sh          # 硬件适配: 检测→重写硬件配置+swapfile (构建后还原)
+├── build.sh                        # 统一入口: Live CD→install.sh, 已装→适配+switch
 └── .sops.yaml                     # SOPS 加密规则 (声明用哪些 age 公钥)
 ```
 
@@ -52,7 +53,7 @@ flake.nix                          # 入口: hostName/hostDir 定义 → nixosCo
 - **纯 Wayland 环境** —— `services.xserver.enable = false`, 完全无 X11 支持。所有 GUI 程序必须原生支持 Wayland。
 - **文件系统挂载由 [disko](https://github.com/nix-community/disko) 声明式管理** —— `nix run github:nix-community/disko -- --mode zap_create_mount` 在安装时一步完成分区/格式化/子卷/swapfile/挂载。配置入口 `hosts/default/disks.nix`, 生成的 `fileSystems`/`swapDevices` 由 `inputs.disko.nixosModules.disko` 模块注入。`hardware-configuration.nix` 只含 initrd/kernel 模块 (`nixos-generate-config` 生成部分), 文件系统不再手写, CPU 微码固定双开于 `modules/nixos/hardware.nix`。
 - **分区通过 LABEL 寻址** —— ESP 分区 `-n ESP`, btrfs 根分区 `-L nixos`, 在 `disks.nix` 的 `extraArgs` 中设定, 跨重装稳定。
-- **休眠 resume 使用 `by-label/nixos` + cmdline `resume_offset=`** —— 格式化时设 `-L nixos`,跨重装稳定; 内核恢复休眠镜像早于 initrd, 只认 cmdline。**休眠执行由 `hibernate-now` (sudoers 放行免密) 直写内核 `/sys/power/state` 走 S4, 每次休眠前动态探测偏移 (`btrfs inspect-internal map-swapfile`) 写入 `/sys/power/resume_offset`, 绕过 systemd 260 休眠栈** (260 + 内核 6.18 新挂载 API 下 btrfs swap 的 `CanHibernate` 恒为 "na", `systemctl hibernate` 被 logind 拒绝)。cmdline `resume_offset=` (boot.nix `boot.kernelParams`) 仓库常驻已知值 (最近一次探测或安装时固化, 探测失败时作为回退), **构建前由 `scripts/adapt-hardware.sh` 探测当前 swapfile 偏移注入 (rebuild.sh 自动调用, 构建后 restore 还原), 与 swapfile 大小同机制** —— btrfs balance 移动 swapfile / 换盘重装后 rebuild 一次即自动同步, 无需手工查数。探测失败 (非 root 且 sudo 无缓存) 保留仓库回退值: `hibernate-now` 休眠前检测 cmdline 与实测不符时打印警告 (照常休眠), 提示 rebuild 同步。
+- **休眠 resume 使用 `by-label/nixos` + cmdline `resume_offset=`** —— 格式化时设 `-L nixos`,跨重装稳定; 内核恢复休眠镜像早于 initrd, 只认 cmdline。**休眠执行由 `hibernate-now` (sudoers 放行免密) 直写内核 `/sys/power/state` 走 S4, 每次休眠前动态探测偏移 (`btrfs inspect-internal map-swapfile`) 写入 `/sys/power/resume_offset`, 绕过 systemd 260 休眠栈** (260 + 内核 6.18 新挂载 API 下 btrfs swap 的 `CanHibernate` 恒为 "na", `systemctl hibernate` 被 logind 拒绝)。cmdline `resume_offset=` (boot.nix `boot.kernelParams`) 仓库常驻已知值 (最近一次探测或安装时固化, 探测失败时作为回退), **构建前由 `scripts/adapt-hardware.sh` 探测当前 swapfile 偏移注入 (build.sh 自动调用, 构建后 restore 还原), 与 swapfile 大小同机制** —— btrfs balance 移动 swapfile / 换盘重装后 rebuild 一次即自动同步, 无需手工查数。探测失败 (非 root 且 sudo 无缓存) 保留仓库回退值: `hibernate-now` 休眠前检测 cmdline 与实测不符时打印警告 (照常休眠), 提示 rebuild 同步。
 - **登录用 greetd + tuigreet** —— 无显示管理器 (GDM/SDDM)。tuigreet 直接跑在 tty, 零 GUI 依赖 (nixpkgs 稳定包, 无额外 flake input), `greetd.nix` 用 `--remember` 记住上次用户、`--cmd niri-session` 固定会话; `greeter` 运行用户需在 `greetd.nix` 手动创建 (NixOS greetd 模块不自动建)。`greetd.nix` 设 `StartLimitBurst=20` + `KillMode=mixed` 防 greeter 崩溃重启触发 rate-limit 黑屏。
 - **zramSwap 50%** + btrfs swapfile 双交换,满足休眠需求。swapfile 大小与内存等大 (`disks.nix` 的 `swap.swapfile.size`, 上取整; 休眠要求 swap ≥ 内存; **低内存安装期放宽至 8G** 留虚拟余量, 模板语义不受影响)。rebuild 时检测漂移并按方向分级处理: **内存变大 → 自动重建** (swap < RAM 休眠失效, 危险方向; swapoff 小内容回灌大内存安全), **内存变小 → 仅提示** (自动收缩 swapoff 大内容回灌小内存有 OOM 风险, 永不自动); 重建在本轮硬件适配之前, resume_offset 随适配探测同步修正。
 - **`boot.initrd.systemd.enable = true`** —— systemd initrd 提供更干净的启动流程。
@@ -100,7 +101,7 @@ cp secrets/secrets.template.yaml secrets/secrets.yaml
 nix shell nixpkgs#sops -c sops -e -i secrets/secrets.yaml
 
 # 3. 加密后的 secrets.yaml 正常 commit 签入 (密文可安全入库), 直接应用
-./scripts/rebuild.sh
+./build.sh
 ```
 
 ### 编辑 secrets (sops CLI 需 host key 派生密钥)
@@ -154,13 +155,13 @@ install.sh 检测不到 host key 会跳过固化并警告, 安装期 sops 解密
 sudo ./scripts/install.sh --disk /dev/sda
 ```
 
-**安装后 (首次启动)**: 系统自动生成新 SSH host key, 按「首次设置」初始化 secrets (host key 公钥登记 `.sops.yaml` + 从模板加密 `secrets.yaml`), 再 `./scripts/rebuild.sh` 应用。
+**安装后 (首次启动)**: 系统自动生成新 SSH host key, 按「首次设置」初始化 secrets (host key 公钥登记 `.sops.yaml` + 从模板加密 `secrets.yaml`), 再 `./build.sh` 应用。
 
 ### 换主机或密钥泄露
 
 1. 新主机 `.sops.yaml` 登记自己的 host key 公钥: `ssh-to-age -i /etc/ssh/ssh_host_ed25519_key.pub`
 2. 旧 host key 派生密钥重新加密: `sops updatekeys secrets/secrets.yaml` (配合 `SOPS_AGE_KEY_FILE`)
-3. `git commit` + `./scripts/rebuild.sh`
+3. `git commit` + `./build.sh`
 
 ### host key 变化处理 (重装 / 换设备)
 
@@ -203,7 +204,7 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
    ```
    若 `nix shell` 卡在 flake 解析, 先 `nix build nixpkgs#sops` 拿到 `/nix/store/<hash>-sops/bin/sops` 直接调用。
 3. `git add secrets/secrets.yaml` && commit `secrets: 轮换 github-pat` && `git push origin main`。
-4. `./scripts/rebuild.sh` 验证 (无 401 即成功)。
+4. `./build.sh` 验证 (无 401 即成功)。
 
 **已知坑**:
 - 远程默认 shell 是 fish, `$?` 要用 `$status`; 复杂命令用 `bash -c` 或 `ssh ... 'bash -s'`。
@@ -248,7 +249,7 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 ## 修改配置的典型流程
 
 1. 编辑对应的 `.nix` 模块文件
-2. `./scripts/rebuild.sh` (在仓库根目录; 先自动硬件适配再 switch)
+2. `./build.sh` (在仓库根目录; 先自动硬件适配再 switch)
 3. 如果是新增用户级程序(如 fish/kitty/neovim 配置),编辑 `modules/home/programs/<name>.nix`,同样 rebuild
 
 ## 添加新主机
@@ -264,7 +265,7 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 - **必须 root** (`[ "$(id -u)" = 0 ]`): 需要分区、格式化、挂载、`nixos-install`
 - **必须 git 仓库** 且会修复 `.git/index` 属主不一致 (libgit2 安全检查)
 - **内存 < 7.5G (7680M, 保守阈值) 时自动创建临时 zram swap** 防止编译 OOM
-- **构建期硬件适配** —— install.sh 与 rebuild.sh 前都会运行 `scripts/adapt-hardware.sh` (检测当前硬件 → 重写 `hardware-configuration.nix` 模块/hostPlatform + `disks.nix` swapfile 大小 + `modules/nixos/boot.nix` 的 resume_offset), 构建完成后 `restore_adapt` 还原这三个文件 (适配是构建期临时状态, 系统已固化; 仓库保持分发模板语义, 换硬件/加内存后 rebuild 自动适配)
+- **构建期硬件适配** —— install.sh 与 build.sh 前都会运行 `scripts/adapt-hardware.sh` (检测当前硬件 → 重写 `hardware-configuration.nix` 模块/hostPlatform + `disks.nix` swapfile 大小 + `modules/nixos/boot.nix` 的 resume_offset), 构建完成后 `restore_adapt` 还原这三个文件 (适配是构建期临时状态, 系统已固化; 仓库保持分发模板语义, 换硬件/加内存后 rebuild 自动适配)
 - **分区由 disko 管理** —— install.sh 用 `nix run github:nix-community/disko -- --mode zap_create_mount` (master 最新版) 替代手工 parted/mkfs/btrfs
 - **仓库自动就位** —— install.sh 完成后把 Live CD 上的仓库复制到 `/persist/home/<mainUser>/code/nixos-config` (含 .git, 属主给 mainUser, 日常使用无需再 clone); 目标已存在仓库时跳过不覆盖 (保护用户未 push 改动)
 - **root 无密码** (`--no-root-password`), 登录凭据仅通过主用户 (`mainUser`) 管理
@@ -272,7 +273,7 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 
 ## hardware-configuration.nix
 
-此文件由 `scripts/adapt-hardware.sh` 自动生成 (install.sh 安装时与 rebuild.sh 每次 switch 前均调用): 检测当前硬件 (模块/hostPlatform/swapfile) 重写本文件与 disks.nix (另注入 modules/nixos/boot.nix 的 resume_offset), 构建完成后由 `restore_adapt` 还原 (配置已固化进系统, 仓库保持干净)。CPU 微码固定双开于 `modules/nixos/hardware.nix`, 不再生成。迁移到不同硬件时直接 rebuild 即自动适配 (无需手动合并)。
+此文件由 `scripts/adapt-hardware.sh` 自动生成 (install.sh 安装时与 build.sh 每次 switch 前均调用): 检测当前硬件 (模块/hostPlatform/swapfile) 重写本文件与 disks.nix (另注入 modules/nixos/boot.nix 的 resume_offset), 构建完成后由 `restore_adapt` 还原 (配置已固化进系统, 仓库保持干净)。CPU 微码固定双开于 `modules/nixos/hardware.nix`, 不再生成。迁移到不同硬件时直接 rebuild 即自动适配 (无需手动合并)。
 
 ## 与安装方案的关系
 

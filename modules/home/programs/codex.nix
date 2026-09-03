@@ -45,7 +45,7 @@
         # rebuild 会 restart 本服务重试
         ${pkgs.curl}/bin/curl --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 3 --retry-max-time 60 --retry-all-errors -fsSL \
           https://chatgpt.com/codex/install.sh | ${pkgs.coreutils}/bin/timeout 120 ${pkgs.bash}/bin/bash \
-          || { echo "警告: codex 安装失败 (journalctl --user -u codex-install); 重试: ./scripts/rebuild.sh 或 systemctl --user restart codex-install"; exit 1; }
+          || { echo "警告: codex 安装失败 (journalctl --user -u codex-install); 重试: ./build.sh 或 systemctl --user restart codex-install"; exit 1; }
       '';
     };
     Install.WantedBy = [ "default.target" ];

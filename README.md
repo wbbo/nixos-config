@@ -171,7 +171,7 @@ ls ~/code/nixos-config/     # 期望: 仓库已自动就位 (install.sh 复制),
 
 ### 日常使用（装好后）
 
-> **先记住一件事**：日常 90% 的操作就是一条命令——`./scripts/rebuild.sh`（改完任何配置后跑它，自动硬件适配 + 应用变更）。所有命令在目标机器终端执行。
+> **先记住一件事**：日常 90% 的操作就是一条命令——`./build.sh`（改完任何配置后跑它，自动硬件适配 + 应用变更）。所有命令在目标机器终端执行。
 
 **仓库**：install.sh 已自动就位（`~/code/nixos-config`，含 `.git`，可直接 pull/rebuild），**无需 clone**。仅当仓库缺失时（如从别的设备拷配置过来）才需要：
 
@@ -186,13 +186,13 @@ cd ~/code/nixos-config
 
 | 想做什么 | 怎么做 |
 |------|------|
-| 改了任何 `.nix` / `local.nix`，应用变更 | `./scripts/rebuild.sh` |
-| 升级依赖（noctalia/nixpkgs 等版本） | `nix flake update` → `./scripts/rebuild.sh` |
-| 加了内存 / 换了硬件 | 直接 `./scripts/rebuild.sh`（自动硬件适配） |
-| 改密码 / 换 GitHub token | 编辑 secrets（见下）→ `./scripts/rebuild.sh` |
+| 改了任何 `.nix` / `local.nix`，应用变更 | `./build.sh` |
+| 升级依赖（noctalia/nixpkgs 等版本） | `nix flake update` → `./build.sh` |
+| 加了内存 / 换了硬件 | 直接 `./build.sh`（自动硬件适配） |
+| 改密码 / 换 GitHub token | 编辑 secrets（见下）→ `./build.sh` |
 | 清理旧系统版本 | `sudo nix-collect-garbage --delete-old` |
 
-> ✅ 检查：`./scripts/rebuild.sh` 结尾输出 `硬件适配文件已还原` 即成功（适配置是构建期临时状态，完成后自动还原，仓库保持干净）。
+> ✅ 检查：`./build.sh` 结尾输出 `硬件适配文件已还原` 即成功（适配置是构建期临时状态，完成后自动还原，仓库保持干净）。
 > 不需要单独 `home-manager switch`（已集成）。
 
 **改密码 / GitHub token（编辑 secrets）**
@@ -203,7 +203,7 @@ sudo nix --extra-experimental-features 'nix-command flakes' \
   sh -c 'export SOPS_AGE_KEY_CMD="ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key"; EDITOR=vim sops secrets/secrets.yaml'
 ```
 
-sops 会打开 vim：改 `main-user-password`（登录密码明文，系统自动派生哈希）或 `github-token` 等字段 → `:wq` 保存（自动加密）→ `./scripts/rebuild.sh` 生效。
+sops 会打开 vim：改 `main-user-password`（登录密码明文，系统自动派生哈希）或 `github-token` 等字段 → `:wq` 保存（自动加密）→ `./build.sh` 生效。
 
 > **GitHub token 失效**：症状是 `nix flake update` 报 401/403（日常 rebuild 不受影响）。换新 token（[GitHub tokens](https://github.com/settings/tokens)，勾 `public_repo`）→ 改 `github-token` 字段 → rebuild。
 
@@ -290,8 +290,8 @@ nixos-config/
 ├── flake.nix                       # Flakes 入口: hostName 固定 → nixosConfigurations.nixos
 ├── scripts/
 │   ├── install.sh                  # 全新安装脚本 (disko + nixos-install, 固化 host key)
-│   ├── adapt-hardware.sh           # 硬件适配: 检测→重写硬件配置+swapfile (构建完成后还原)
-│   └── rebuild.sh                  # 适配 + nixos-rebuild switch (日常更新用这个)
+│   └── adapt-hardware.sh           # 硬件适配: 检测→重写硬件配置+swapfile (构建完成后还原)
+├── build.sh                        # 统一入口: Live CD→install.sh, 已装→适配+switch
 ├── .sops.yaml                      # sops 规则 (host key 派生的 age 公钥)
 ├── hosts/default/                  # 默认主机 (分发模板)
 │   ├── configuration.nix           #   入口: 硬件 + 系统模块 + Home Manager

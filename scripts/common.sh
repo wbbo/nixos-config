@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 公共函数库: install.sh / scripts/adapt-hardware.sh / scripts/rebuild.sh source 复用。
+# 公共函数库: install.sh / scripts/adapt-hardware.sh / build.sh source 复用。
 # 依赖调用者先定义 SCRIPT_DIR (仓库根目录绝对路径), 再 source 本文件:
 #   source "$SCRIPT_DIR/scripts/common.sh"
 

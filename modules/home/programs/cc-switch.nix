@@ -38,7 +38,7 @@
           # (安装段失败即退出, 下方 S3 配置不再执行)
           ${pkgs.curl}/bin/curl --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 3 --retry-max-time 60 --retry-all-errors -fsSL \
             https://github.com/SaladDay/cc-switch-cli/releases/latest/download/install.sh | ${pkgs.coreutils}/bin/timeout 120 ${pkgs.bash}/bin/bash \
-            || { echo "警告: cc-switch 安装失败 (journalctl --user -u cc-switch-install); 重试: ./scripts/rebuild.sh 或 systemctl --user restart cc-switch-install"; exit 1; }
+            || { echo "警告: cc-switch 安装失败 (journalctl --user -u cc-switch-install); 重试: ./build.sh 或 systemctl --user restart cc-switch-install"; exit 1; }
         fi
 
         # S3 云同步配置 (Cloudflare R2): 凭据 + bucket/endpoint 都从 sops 解密

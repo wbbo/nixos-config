@@ -2,9 +2,9 @@
 # 硬件适配脚本: 检测当前硬件 → 更新仓库配置
 #   - hosts/<hostDir>/hardware-configuration.nix (模块/hostPlatform)
 #   - hosts/<hostDir>/disks.nix (swapfile 大小, 休眠要求 swap ≥ RAM)
-# 每次 nixos-rebuild 前运行 (rebuild.sh 自动调用); install.sh 安装时同样调用。
+# 每次 nixos-rebuild 前运行 (build.sh 自动调用); install.sh 安装时同样调用。
 # 适配写入工作区, nix path fetcher (--flake /path) 直接读取 (构建后由调用方
-# install.sh/rebuild.sh 的 restore_adapt 还原)。
+# install.sh/build.sh 的 restore_adapt 还原)。
 # 注意: nixos-generate-config 的硬件检测基于当前运行系统, --root 仅决定输出路径,
 # 用临时目录避免污染 /etc/nixos。
 set -euo pipefail
@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
-# 公共函数 (info/warn/die/host_name/host_dir), 与 install.sh / rebuild.sh 共用
+# 公共函数 (info/warn/die/host_name/host_dir), 与 install.sh / build.sh 共用
 source "$SCRIPT_DIR/scripts/common.sh"
 
 # 主机名/主机目录 (解析逻辑见 common.sh)
@@ -24,7 +24,7 @@ git config --global --add safe.directory "$SCRIPT_DIR" 2>/dev/null || true
 # index 属主修复仅普通用户需要: root 对任何属主都有全权, 若 root 把 index
 # chown 成 root, 普通用户下次进来 chown 不动, 曾经的 rm 兜底会删掉 index ——
 # index 一丢 git 全库变 untracked, flake 求值树为空, 构建必炸。故 root 跳过,
-# 普通用户先 own 再借 sudo (rebuild.sh 已 sudo -v 预热), rm 只留最后兜底。
+# 普通用户先 own 再借 sudo (build.sh 已 sudo -v 预热), rm 只留最后兜底。
 if [ "$(id -u)" != 0 ] && [ -f .git/index ] && [ "$(stat -c %u .git/index 2>/dev/null)" != "$(id -u)" ]; then
   chown "$(id -u):$(id -g)" .git/index 2>/dev/null \
     || sudo chown "$(id -u):$(id -g)" .git/index 2>/dev/null \
@@ -131,7 +131,7 @@ fi
 # label 仍在 —— 探到的是即将被 zap 的 stale 值, 注入反而有害; 首装真实值由
 # install.sh 在 disko 之后对 /mnt/swap/swapfile 补探注入。
 # 探测需 root (挂载 @swap + btrfs map-swapfile): root 直跑; 非 root 时 sudo -n
-# (rebuild.sh 已 sudo -v 预热缓存); 都不可用则跳过, 保留仓库占位 ——
+# (build.sh 已 sudo -v 预热缓存); 都不可用则跳过, 保留仓库占位 ——
 # hibernate-now 休眠前检测 cmdline 与实测不符会告警提示 rebuild, 不静默丢会话。
 probe_resume_offset() {
   local dev=""

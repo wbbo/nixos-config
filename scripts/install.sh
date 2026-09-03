@@ -11,45 +11,14 @@ source "$SCRIPT_DIR/scripts/common.sh"
 
 SCRIPT_NAME="$(basename "$0")"
 
-help() {
-  cat >&2 <<EOF
-  NixOS 安装脚本 —— disko 分区 + nixos-install
-
-用法:
-  ${SCRIPT_NAME} --disk /dev/xxx [-f]
-
-选项:
-  -d, --disk <设备>       目标磁盘设备 (必需)
-  -f, --force              静默模式, 跳过磁盘确认 (自动 wipe)
-  -h, --help               帮助
-
-示例:
-  # 全新安装 (最简: 只需选磁盘)
-  sudo ${SCRIPT_NAME} -d /dev/sda
-
-  # 静默安装 (无人值守)
-  sudo ${SCRIPT_NAME} -d /dev/sda -f
-
-  # 携带 GitHub token (可选, 避免匿名限流 403)
-  sudo env GITHUB_TOKEN=ghp_xxx ${SCRIPT_NAME} -d /dev/sda
-
-分区由 disko 声明式管理。主机名/主机目录自动从 flake.nix 读取,
-用户名/主机名可在 hosts/<hostDir>/local.nix 覆盖, secrets 安装后初始化 (见 README)。
-安装过程自动硬件适配 (scripts/adapt-hardware.sh): 生成 hardware-configuration.nix
-+ swapfile 大小 (与内存等大), 写入工作区, 构建后还原。
-EOF
-
-  exit "${1:-0}"
-}
-
-FORCE=0; DISK=""
+DISK=""
 
 # 主机名/主机目录自动从 flake.nix 读取 (networking.hostName 可在 local.nix 覆盖;
 # 解析逻辑见 scripts/common.sh 的 host_name/host_dir)
 HOST_NAME="$(host_name)"
 HOST_DIR="$(host_dir)"
 
-if ! TEMP=$(getopt -o d:fh --long disk:,force,help -n "$SCRIPT_NAME" -- "$@"); then
+if ! TEMP=$(getopt -o d:h --long disk:,help -n "$SCRIPT_NAME" -- "$@"); then
   echo "参数解析错误" >&2; exit 1
 fi
 eval set -- "$TEMP"
@@ -57,10 +26,9 @@ eval set -- "$TEMP"
 while true; do
   case "$1" in
     -d|--disk) DISK="$2"; shift 2 ;;
-    -f|--force) FORCE=1; shift ;;
-    -h|--help) help 0 ;;
+    -h|--help) exit 0 ;;   # 帮助职责在统一入口 build.sh -h, 此处静默退出
     --) shift; break ;;
-    *) echo "未知选项: $1" >&2; help 1 ;;
+    *) echo "未知选项: $1" >&2; exit 1 ;;
   esac
 done
 
@@ -71,9 +39,17 @@ if [ -z "$DISK" ] && [ ${#REMAINING_ARGS[@]} -gt 0 ]; then
   [ ${#REMAINING_ARGS[@]} -gt 1 ] && warn "多余的参数将被忽略, 仅使用 $DISK"
 fi
 
-[ -n "$DISK" ] || help 1
+[ -n "$DISK" ] || die "缺少 --disk 参数 (安装用法见 ./build.sh -h)"
 [ -b "$DISK" ] || die "磁盘 $DISK 不存在"
 [ "$(id -u)" = 0 ] || die "请用 sudo 运行"
+
+# ---- Live CD 环境守卫: 已装系统上误跑本脚本会 zap 全盘摧毁数据 ----
+# 判据: Live 根为 tmpfs 或存在 /nix/.ro-store (ISO squashfs store 层);
+# 已装系统 (磁盘文件系统根 + 无 overlay store) 两者皆假 → 拒绝并指引
+# 统一入口 build.sh (环境感知, Live 自动转安装、已装走日常重建)。
+if [ "$(findmnt -no FSTYPE / 2>/dev/null || true)" != "tmpfs" ] && [ ! -d /nix/.ro-store ]; then
+  die "非 Live CD 环境! install.sh 会全盘清空; 日常重建请用 ./build.sh"
+fi
 
 # ---- 临时禁用 systemd-oomd: 低内存 VM 防护误杀 (脚本最前, 覆盖所有阶段) ----
 # 3.8G VM 实测: nix 求值/构建进程在内存整体 ~85% 时被 systemd-oomd 击杀
@@ -83,7 +59,7 @@ fi
 # 环境 (tmpfs), 安装完成后 reboot 即弃, 新系统从自身配置启动, oomd 状态
 # 由 NixOS 声明式管理。停用失败仅 warn: 无碍继续 (真 OOM 由内核兜底)。
 if systemctl stop systemd-oomd 2>/dev/null; then
-  info "已停用 systemd-oomd (Live CD 临时环境, 重启即弃不恢复)"
+  info "已停用 systemd-oomd (Live CD 临时环境, 防止OOM)"
 else
   warn "停用 systemd-oomd 失败 (可能未启用), nix 进程仍可能被 oomd 击杀"
 fi
@@ -222,11 +198,16 @@ echo ""
 warn "即将清空 $DISK 全盘数据!"
 lsblk -o NAME,SIZE,TRAN,MODEL "$REAL_DISK"
 echo ""
-if [ "$FORCE" -eq 1 ]; then
-  warn "静默模式 (-f): 跳过确认"
+printf "即将清空 %s 全盘数据, 继续? [Y/n] " "$DISK"
+# 交互下回车 = 默认确认 (Y); n/N 取消。read 失败 (非交互 EOF, 如管道/CI)
+# 一律取消 —— 全盘 wipe 必须有人工在场, 不因回车默认而放行无人场景。
+if read -r confirm; then
+  case "${confirm:-Y}" in
+    [Yy]) : ;;
+    *) info "已取消"; exit 0 ;;
+  esac
 else
-  read -r -p "输入 yes 确认: " confirm || true   # 非交互 stdin 时 read 失败, 走下方取消分支
-  [ "$confirm" = "yes" ] || { info "已取消"; exit 0; }
+  info "非交互输入, 已取消"; exit 0
 fi
 
 # ============================================================================
@@ -438,10 +419,9 @@ fi
 # EXIT trap 由下方 store 搬运段统一注册 (kill 后台监控 + 清 DISKO_TMP)
 
 # disko --mode zap_create_mount: 等效 destroy + format + mount, 一步完成
+# 不提供 --yes-wipe-all-disks: 全盘 wipe 必须经上方人工确认 (及 disko 自身
+# 对已分区盘的交互检查), 无人值守场景请先人工清盘或预分区。
 DISKO_FLAGS=(--mode zap_create_mount)
-if [ "$FORCE" -eq 1 ]; then
-  DISKO_FLAGS+=(--yes-wipe-all-disks)
-fi
 # --root-mountpoint 指向 /mnt (disko 在该路径下执行挂载)
 # 用 flake 锁定的 disko 包 (flake.nix 导出 inputs.disko): 避免拉 master 触发
 # GitHub API 匿名限流 403 (已修复过的回归), 且与 nixos-install 构建用的锁定版本一致。
@@ -599,7 +579,7 @@ fi
 # reboot 即弃, 新系统从自身配置启动, oomd 状态由 NixOS 声明式管理。
 # 停用失败仅 warn: 该机 oomd 不可停或未启用, 无碍继续 (真 OOM 由内核兜底)。
 if systemctl stop systemd-oomd 2>/dev/null; then
-  info "已停用 systemd-oomd (Live CD 临时环境, 重启即弃不恢复)"
+  info "已停用 systemd-oomd (Live CD 临时环境, 防止OOM)"
 else
   warn "停用 systemd-oomd 失败 (可能未启用), nix 进程仍可能被 oomd 击杀"
 fi
@@ -614,7 +594,7 @@ fi
 # (nixos-install 官方内部即 local?root=$mountPoint)。
 NIX_CONN="local?root=/mnt"
 store_drain() {
-  local SRC_LIST DST_LIST MOVE_LIST p
+  local SRC_LIST DST_LIST MOVE_LIST before p
   SRC_LIST=$(find /nix/.rw-store/store -mindepth 1 -maxdepth 1 ! -type c \
     -printf '/nix/store/%f\n' 2>/dev/null | sort -u) || SRC_LIST=""
   [ -n "$SRC_LIST" ] || return 0
@@ -622,29 +602,27 @@ store_drain() {
     -printf '/nix/store/%f\n' 2>/dev/null | sort -u) || DST_LIST=""
   MOVE_LIST=$(comm -23 <(printf '%s\n' "$SRC_LIST") <(printf '%s\n' "$DST_LIST") 2>/dev/null) || MOVE_LIST=""
   [ -n "$MOVE_LIST" ] || return 0
-  # 批量分传 (每批 1000: 防 ARG_MAX 且批间隔离失败); 尽力而为 —— 失败只损失
-  # 增量命中, 缺失项由预热构建在目标盘重新下载
-  if ! printf '%s\n' "$MOVE_LIST" \
-      | xargs -r -n 1000 nix --extra-experimental-features "nix-command flakes" \
-          copy --to "$NIX_CONN" >/dev/null 2>&1; then
-    warn "批量搬运失败, 逐个重试隔离坏 path..."
-    printf '%s\n' "$MOVE_LIST" \
-      | xargs -r -n 1 nix --extra-experimental-features "nix-command flakes" \
-          copy --to "$NIX_CONN" >/dev/null 2>&1 || true
-  fi
+  before=$(df -k /nix/.rw-store 2>/dev/null | tail -1 | awk '{print $3}')
+  info "搬运 $(printf '%s\n' "$MOVE_LIST" | wc -l) 个存量 store path 到目标盘 (腾出 tmpfs)..."
+  # 批量分传 (每批 1000: 防 ARG_MAX, 分批使失败只波及单批); 尽力而为 —— 失败
+  # 静默 (只损失增量命中), 缺失项由预热构建在目标盘重新下载
+  printf '%s\n' "$MOVE_LIST" \
+    | xargs -r -n 1000 nix --extra-experimental-features "nix-command flakes" \
+        copy --to "$NIX_CONN" >/dev/null 2>&1 || true
   # 只删确实落盘的 (copy 失败/跳过的保留); overlay whiteout (-type c) 天然不碰
   comm -12 <(printf '%s\n' "$SRC_LIST") \
     <(find /mnt/nix/store -mindepth 1 -maxdepth 1 ! -type c \
       -printf '/nix/store/%f\n' 2>/dev/null | sort -u) 2>/dev/null \
     | while read -r p; do rm -rf "/nix/.rw-store/store/${p##*/}"; done
+  info "存量搬运完成, 释放 tmpfs $(df -k /nix/.rw-store 2>/dev/null | tail -1 \
+    | awk -v b="${before:-0}" '{d=(b-$3)/1024/1024; if(d<0)d=0; printf "%.1fG", d}')"
   return 0
 }
 # .rw-store 容量已由阶段 1 (store_cap_by_virt 联动) + 阶段 3 (swapfile 启用后
 # 重算提升) 接管; 此处不再固定补扩 16G —— 避免覆盖联动值 (纸面超配会让写满
 # 触发 OOM 而非 ENOSPC, 见上方安全形态注释)。
-info "搬运存量 store 到目标盘腾出 tmpfs (当前占用 $(df -h /nix/.rw-store 2>/dev/null | tail -1 | awk '{print $3}'))..."
+# 无待搬运时完全静默 (占用前后无变化的两行纯噪音)。
 store_drain
-info "存量搬运完成, tmpfs 现占用 $(df -h /nix/.rw-store 2>/dev/null | tail -1 | awk '{print $3}')"
 trap 'rm -f "$DISKO_TMP"' EXIT
 
 # ---- 预热构建: 低内存 VM 内存峰值分离 (nixos-install 段前置) ----
@@ -768,4 +746,4 @@ echo "下一步:"
 echo "  reboot"
 echo ""
 echo "重启后: 仓库已自动就位于 ~/code/nixos-config (无需 clone),"
-echo "  确认 /run/secrets 正常解密后: cd ~/code/nixos-config && ./scripts/rebuild.sh"
+echo "  确认 /run/secrets 正常解密后: cd ~/code/nixos-config && ./build.sh"

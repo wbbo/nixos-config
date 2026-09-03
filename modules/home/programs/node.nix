@@ -61,7 +61,7 @@
             || { echo "警告: nvm.fish 安装失败"; FAIL=1; }
           rm -rf /tmp/nvm.fish-*
         fi
-        [ "$FAIL" = 0 ] || { echo "重试: ./scripts/rebuild.sh 或 systemctl --user restart nvm-install"; exit 1; }
+        [ "$FAIL" = 0 ] || { echo "重试: ./build.sh 或 systemctl --user restart nvm-install"; exit 1; }
       '';
     };
     Install.WantedBy = [ "default.target" ];
