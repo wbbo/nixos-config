@@ -9,10 +9,25 @@
     ./programs/fish.nix
     ./programs/fuzzel.nix
     ./programs/git.nix
+    ./programs/ssh.nix
     ./programs/firefox.nix
     ./programs/fcitx5.nix
     ./programs/noctalia.nix
     ./programs/neovim.nix
+    ./programs/vscode.nix
+    ./programs/cc-switch.nix
+    ./programs/claude.nix
+    ./programs/codex.nix
+    ./programs/udiskie.nix
+    ./programs/java.nix
+    ./programs/go.nix
+    ./programs/rust.nix
+    ./programs/python.nix
+    ./programs/node.nix
+    ./programs/c-cpp.nix
+    ./programs/starship.nix
+    ./programs/scratchpad.nix
+    ./persist.nix
   ];
 
   home = {
@@ -31,12 +46,16 @@
     fd            # find 替代
     ripgrep       # grep 替代
     btop          # 系统监视器
+    htop          # 系统监视器 (替代 top, 无粗体中文表头发虚问题)
     fastfetch     # 系统信息(替代 neofetch)
     unzip
     gzip
     playerctl     # 媒体键控制
     brightnessctl # 亮度(笔记本)
     pavucontrol   # 音量图形控制
+
+    # GTK 明暗主题 (theme-sync 切换 adw-gtk3 / adw-gtk3-dark, 需先安装)
+    adw-gtk3
 
     # Noctalia Shell(面板/通知/启动器/锁屏)
     noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default

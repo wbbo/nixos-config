@@ -5,10 +5,7 @@
 
   services.pipewire = {
     enable = true;
-    alsa = {
-      enable = true;
-      support32Bit = true;
-    };
+    alsa.enable = true;
     pulse.enable = true;
     # JACK 兼容层(专业音频软件)
     jack.enable = true;

@@ -2,7 +2,7 @@
   description = "NixOS 26.05 + Niri + Noctalia Shell 桌面配置 (可分发模板)";
 
   inputs = {
-    # NixOS 26.05 发行分支
+    # NixOS 26.05 发行分支 (社区标准: github tarball + netrc 三条目认证, 见 nix.nix)
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     # Home Manager
@@ -13,9 +13,14 @@
 
     # Noctalia Shell —— 面板/通知/启动器/锁屏/壁纸(替代 waybar+mako+swaybg)
     # quickshell 由 noctalia 内部管理,无需在此声明
+    # 跟踪 main 分支, 升级: nix flake update noctalia
+    # (分支解析走 api.github.com, 凭据由 github-netrc 的 api.github.com 条目提供,
+    #  见 secrets.template.yaml; 安装期用 GITHUB_TOKEN 环境变量, 见 install.sh)
+    # 注意: 不 follow 我们的 nixpkgs —— Noctalia 官方用 nixos-unstable 构建,
+    # follows 到 26.05 会导致旧 quickshell/luau 编译出插件 API 只支持 3-4
+    # (mpvpaper 插件需 API 9)。保持官方 unstable 才能完整支持插件系统。
     noctalia = {
       url = "github:noctalia-dev/noctalia-shell";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     # disko —— 声明式分区 & 格式化 (替代 install.sh 的手工分区逻辑)
@@ -24,9 +29,25 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # impermanence —— 声明式持久化 (home.persistence, boot 期 root bind mount)
+    # 无 release tag, 社区直接跟 master; 注意 API 为重构版:
+    # HM 模块由 NixOS 模块自动注入 (homeManagerModules 输出已废弃报错),
+    # home.persistence 的 attr 名为持久化根路径 (不含家目录, 自动拼接)
+    impermanence = {
+      url = "github:nix-community/impermanence";
+    };
+
     # sops-nix —— 秘密管理 (age 加密, secrets 签入 git, 部署时主机密钥解密)
     sops-nix = {
       url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # GRUB 主题 —— vinceliuice/grub2-themes 自带 nixosModule,
+    # 构建期经其 install.sh 生成主题并接线 boot.loader.grub.theme
+    # (theme=tela/vimix/stylish/whitesur, screen 按显示器分辨率选)
+    grub2-themes = {
+      url = "github:vinceliuice/grub2-themes";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -37,13 +58,14 @@
     hostName = "nixos";
     # 物理主机目录 —— hosts/<hostDir>/ 下的配置目录 (可独立于 hostName 命名)
     hostDir = "default";
+    # 目标系统架构 (packages / nixosConfigurations 复用)
+    system = "x86_64-linux";
   in {
-    # disko 包暴露给 install.sh: nix run .#disko 使用 flake.lock 锁定的版本,
-    # 避免 github: 引用解析分支时调 GitHub API 触发匿名限流 (Live CD 无 token)
-    packages.x86_64-linux.disko = inputs.disko.packages.x86_64-linux.disko;
+    # 导出 disko 包: install.sh 用 `nix run .#disko` 做分区 (锁定版本, 避免拉 master 触发 403)
+    packages.${system}.disko = inputs.disko.packages.${system}.disko;
 
     nixosConfigurations.${hostName} = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
+      system = system;
       specialArgs = {
         inherit inputs;
         # hostName 经 specialArgs 下发到各模块 (networking.nix 等引用)

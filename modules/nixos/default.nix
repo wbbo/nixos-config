@@ -20,5 +20,11 @@
     ./desktop.nix
     ./mihomo.nix
     ./packages.nix
+    ./persist.nix
+    ./docker.nix
+    ./libvirt.nix
+    ./flatpak.nix
+    ./udisks.nix
+    ./home-manager.nix
   ];
 }
