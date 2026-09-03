@@ -1,0 +1,14 @@
+// 护眼模式: 全部窗口 100% 不透明 + 禁用模糊 (消除穿透与眩光)
+// 由 eye-care 脚本切到本文件 (wlsunset 同时提供暖色温)。
+window-rule {
+    opacity 1.0
+    background-effect {
+        blur false
+        xray false
+    }
+}
+
+window-rule {
+    match is-focused=false
+    opacity 1.0
+}

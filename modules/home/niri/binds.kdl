@@ -4,9 +4,12 @@ binds {
     Mod+T              { spawn "kitty"; }
     Mod+Return         { spawn "kitty"; }
     Mod+Slash          { spawn "kitty" "--single-instance"; }
-    Mod+Z              { spawn "fuzzel"; }
     Mod+E              { spawn "nautilus"; }
     Mod+B              { spawn "firefox"; }
+
+    // -------- 护眼 / Scratchpad (NyxNiri 移植) --------
+    Mod+Shift+N { spawn "eye-care"; }                      // 护眼模式 (暖色温 + 关模糊)
+    Mod+Grave   { spawn "niri-scratch-toggle" "kitty"; }   // Scratchpad 持久浮动终端
 
     // -------- Noctalia (v5 IPC: "noctalia msg <cmd>") --------
     Mod+Space          { spawn-sh "noctalia msg panel-toggle launcher"; }
@@ -131,4 +134,7 @@ binds {
     Mod+Shift+E    { quit; }
     Ctrl+Alt+Delete { quit; }
     Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
+
+    // -------- 会话管理 (noctalia session 面板: 锁定/注销/锁定并挂起/休眠/重启/关机) --------
+    Ctrl+Alt+L { spawn-sh "noctalia msg panel-toggle session"; }
 }

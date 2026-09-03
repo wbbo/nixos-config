@@ -9,6 +9,9 @@ prefer-no-csd
 // ================ 模块化子配置(参考 shorin-niri) ================
 include "binds.kdl"
 include "rule.kdl"
+// 护眼模式: effects.kdl 是用户可写目录下的符号链接 (eye-care 脚本切换 normal/eyecare),
+// 必须用绝对/家目录路径 include (store 只读目录内无法放可变链接)
+include "~/.config/niri/effects.kdl"
 
 // ================ 截图路径 ================
 screenshot-path "~/screenshot/Screenshot from %Y-%m-%d %H-%M-%S.png"
@@ -19,11 +22,9 @@ environment {
     LC_CTYPE "zh_CN.UTF-8"
     MOZ_ENABLE_WAYLAND "1"
     XDG_CURRENT_DESKTOP "niri:sway"
-    XDG_CURRENT_DESKTOP "niri:sway"
     XDG_SESSION_TYPE "wayland"
     GDK_BACKEND "wayland"
     TERMINAL "kitty"
-    TERM "kitty"
     TERM "kitty"
     QT_QPA_PLATFORMTHEME "gtk3"
     QT_IM_MODULE "fcitx"
@@ -39,6 +40,15 @@ environment {
 cursor {
     xcursor-theme "Bibata-Modern-Ice"
     xcursor-size 24
+}
+
+// ================ 输出默认分辨率/缩放 (Virtual-1 = 当前虚拟显示器) ================
+// 运行时用 `niri-res <mode>` / `niri-res scale <scale>` 修改并持久化
+// (state 写入 ~/.local/state/niri-resolution|niri-scale,
+//  由 spawn-at-startup 的 niri-apply-resolution 在下次启动时应用覆盖默认)。
+output "Virtual-1" {
+    mode "1920x1080"
+    scale 1.0
 }
 
 // ================ 输入设备 ================
@@ -67,10 +77,21 @@ overview {
 
 // ================ 启动项 ================
 spawn-at-startup "noctalia"
+// 应用持久化的分辨率 (若 ~/.local/state/niri-resolution 存在, 覆盖声明式默认)
+spawn-at-startup "niri-apply-resolution"
+// 对齐护眼状态: 修复 effects.kdl 链接 (若缺失) + 同步 wlsunset 色温
+spawn-at-startup "eye-care" "--sync"
+// polkit 认证代理: 授权 systemctl reboot/poweroff/suspend 等图形对话框
+spawn-at-startup "polkit-gnome-authentication-agent-1"
 
 // ================ 屏幕盖处理(laptop lid) ================
+// 合盖 → 仅锁屏 (noctalia lock); logind 对合盖全设 ignore 不挂起
+// (modules/nixos/services.nix HandleLidSwitch*=ignore)。
+// 注意不要用 session lock-and-suspend —— 那会绕过 logind 配置直接挂起。
+// 休眠入口在会话菜单 (Ctrl+Alt+L → sudo hibernate-now 直写内核, 见 boot.nix)。
+// 开盖输入密码解锁; niri 合盖自动关内屏/开盖恢复, 无需配置。
 switch-events {
-    lid-close { spawn "noctalia" "msg" "session" "lock-and-suspend"; }
+    lid-close { spawn "noctalia" "msg" "session" "lock"; }
 }
 
 // ================ 模糊效果(Niri >= 26.04) ================
@@ -155,6 +176,15 @@ layer-rule {
     match namespace="^noctalia-(bar-[^\"]+|notification|dock|panel|attached-panel|osd)$"
     background-effect {
         xray false
+    }
+}
+
+// 顶栏纯透明 + 防毛玻璃: noctalia background_opacity=0.0 (透明背景), niri blur false (无模糊)
+layer-rule {
+    match namespace="^noctalia-bar-default$"
+    shadow { off; }
+    background-effect {
+        blur false
     }
 }
 

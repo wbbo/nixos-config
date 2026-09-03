@@ -1,0 +1,14 @@
+// 标准外观模式: 窗口模糊 + 轻微透明 (由 eye-care 脚本切到本文件)
+// 注意: 本文件经 ~/.config/niri/effects.kdl 符号链接 include,
+// include 顺序在 rule.kdl 之后 (见 config.kdl), 故本文件 window-rule 覆盖先定义的 opacity。
+window-rule {
+    background-effect {
+        blur true
+        xray false
+    }
+}
+
+window-rule {
+    match is-focused=false
+    opacity 0.92
+}
