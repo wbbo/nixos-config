@@ -44,10 +44,15 @@
                 "@swap" = {
                   mountpoint = "/swap";
                   mountOptions = [ "noatime" ];
-                  swap.swapfile.size = "16G";
+                  # swapfile 大小: install.sh 安装时按内存重写为与内存等大
+                  # (上取整; 休眠要求 swap ≥ 内存)。此值为分发默认,
+                  # 直接 disko (不走 install.sh) 时同样有效。
+                  swap.swapfile.size = "4G";
                 };
                 "@snapshots" = {
-                  mountpoint = "/.snapshots";
+                  # 挂载在 /persist/.snapshots: 快照存储独立于数据卷 (@persist 的子卷挂载点)
+                  # 快照子卷与数据卷互不拖累: @persist 损坏/误删时快照仍可恢复
+                  mountpoint = "/persist/.snapshots";
                   mountOptions = [ "noatime" ];
                 };
               };

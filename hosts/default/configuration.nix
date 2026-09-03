@@ -4,7 +4,7 @@
 
 {
   imports = [
-    # 硬件扫描结果: initrd 模块 / CPU 微码 / 文件系统支持
+    # 硬件扫描结果: initrd/kernel 模块 / 文件系统支持
     # 由 install.sh 调用 nixos-generate-config --root /mnt 自动生成
     # fileSystems / swapDevices 由 disko 模块根据 disks.nix 自动生成
     ./hardware-configuration.nix
@@ -18,6 +18,10 @@
 
     # Home Manager 的 NixOS 模块(来自 flake input)
     inputs.home-manager.nixosModules.home-manager
+
+    # impermanence —— 声明式持久化; 须在 home-manager NixOS 模块之后导入,
+    # 它检测到 home-manager.sharedModules 选项后自动给 HM 注入 home.persistence
+    inputs.impermanence.nixosModules.impermanence
 
     # 系统级模块集合
     ../../modules/nixos

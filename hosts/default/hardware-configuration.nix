@@ -11,6 +11,8 @@
     "ahci" "nvme" "sd_mod" "usb_storage" "usbhid" "uas"
     "xhci_pci" "ehci_pci" "iwlwifi" "iwlmvm" "iwldvm"
   ];
-  # 具体 CPU 微码 / 内核模块在安装时自动检测, 此处保持通用
+  # 具体内核模块在安装时自动检测, 此处保持通用 (CPU 微码固定双开于 modules/nixos/hardware.nix)
+  # 分发默认 x86_64; install.sh 安装时按 Live CD 架构 (uname -m) 重写,
+  # ARM 机器 (aarch64 等) 自动适配。不能省略: nixpkgs 的 hostPlatform 无默认值。
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
 }
