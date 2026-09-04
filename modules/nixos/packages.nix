@@ -10,9 +10,18 @@
     fish.enable = true;
     # git-lfs: 装包 + /etc/gitconfig 自动写 filter.lfs (clean/smudge/process)。
     # 系统默认 git 不带 lfs, git lfs 子命令会报 "'lfs' 不是一个 git 命令"。
+    # package 换 git.override: svnSupport 加 git svn 子命令 (公司仓库走
+    # SVN); withLibsecret 加凭据助手 (HTTPS 凭据存 GNOME keyring);
+    # withSsh 硬编码 ssh 路径 (systemd 单元环境不依赖 PATH)。
+    # 与 HM programs.git.package 参数一致 → 同一 store 路径, 只有一份 git。
     git = {
       enable = true;      # gitconfig 生成的必需前提 (模块源码 mkIf cfg.enable)
       lfs.enable = true;
+      package = pkgs.git.override {
+        svnSupport = true;
+        withLibsecret = true;
+        withSsh = true;
+      };
     };
   };
 

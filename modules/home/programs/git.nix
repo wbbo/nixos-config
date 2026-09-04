@@ -12,10 +12,45 @@
 }:
 {
   # gitui: 终端 git TUI (Rust, 声明式安装)
-  home.packages = [ pkgs.gitui ];
+  # subversion: SVN 客户端 (svn, 公司仓库仍走 SVN)
+  # git-filter-repo: 历史重写 (替代弃用 filter-branch, LFS 历史瘦身)
+  # gh / glab: GitHub / GitLab CLI
+  home.packages = with pkgs; [
+    gitui
+    subversion
+    git-filter-repo
+    gh
+    glab
+  ];
+
+  # delta: 语法高亮 diff pager (enableGitIntegration 自动写 core.pager
+  # + interactive.diffFilter 到 ~/.gitconfig, git diff/log 彩色分页)
+  programs.delta = {
+    enable = true;
+    enableGitIntegration = true;
+  };
 
   programs.git = {
     enable = true;
+    # git svn 子命令 (svnSupport, git svn clone/dcommit/rebase) + libsecret
+    # 凭据助手 (withLibsecret, HTTPS 凭据存 GNOME keyring) + withSsh (硬编码
+    # ssh 路径, maintenance timer 等 systemd 单元环境不依赖 PATH 找 ssh):
+    # 替换默认 git 包。与 packages.nix 系统层参数一致 → 同一 store 路径。
+    package = pkgs.git.override {
+      svnSupport = true;
+      withLibsecret = true;
+      withSsh = true;
+    };
+    # git maintenance 后台维护 (prefetch/commit-graph/gc): 大仓库
+    # status/log 明显提速; systemd user timers 默认 hourly/daily/weekly
+    maintenance = {
+      enable = true;
+      repositories = [
+        "${config.home.homeDirectory}/code/nixos-config"
+        "${config.home.homeDirectory}/code/vsct"
+        "${config.home.homeDirectory}/code/isid"
+      ];
+    };
     # 注册 filter.lfs.* 并安装 git-lfs；全局 ~/.config/git/config 只读，
     # git lfs install 无法自行写入（仓库级已用 --local 兜底）
     lfs.enable = true;
@@ -41,6 +76,9 @@
     # 换行符: 检出不转换, 提交时 CRLF → LF (core.autocrlf=input)
     core.autocrlf = "input";
     diff.algorithm = "histogram";
+    # HTTPS 凭据存 GNOME keyring (withLibsecret 构建的 git-credential-libsecret);
+    # SSH 协议仓库不受影响
+    credential.helper = "libsecret";
   };
 
   # git 身份激活钩子: 从 sops secrets 生成 identity include 文件。
