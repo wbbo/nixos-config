@@ -11,6 +11,9 @@
   ...
 }:
 {
+  # gitui: 终端 git TUI (Rust, 声明式安装)
+  home.packages = [ pkgs.gitui ];
+
   programs.git = {
     enable = true;
     # 注册 filter.lfs.* 并安装 git-lfs；全局 ~/.config/git/config 只读，
