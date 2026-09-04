@@ -12,13 +12,14 @@ source "$SCRIPT_DIR/scripts/common.sh"
 SCRIPT_NAME="$(basename "$0")"
 
 DISK=""
+FORCE=0   # -f/--force: 跳过磁盘确认 (README 记载的无人值守入口)
 
 # 主机名/主机目录自动从 flake.nix 读取 (networking.hostName 可在 local.nix 覆盖;
 # 解析逻辑见 scripts/common.sh 的 host_name/host_dir)
 HOST_NAME="$(host_name)"
 HOST_DIR="$(host_dir)"
 
-if ! TEMP=$(getopt -o d:h --long disk:,help -n "$SCRIPT_NAME" -- "$@"); then
+if ! TEMP=$(getopt -o d:fh --long disk:,force,help -n "$SCRIPT_NAME" -- "$@"); then
   echo "参数解析错误" >&2; exit 1
 fi
 eval set -- "$TEMP"
@@ -26,6 +27,7 @@ eval set -- "$TEMP"
 while true; do
   case "$1" in
     -d|--disk) DISK="$2"; shift 2 ;;
+    -f|--force) FORCE=1; shift ;;
     -h|--help) exit 0 ;;   # 帮助职责在统一入口 build.sh -h, 此处静默退出
     --) shift; break ;;
     *) echo "未知选项: $1" >&2; exit 1 ;;
@@ -68,16 +70,21 @@ fi
 REAL_DISK=$(readlink -f "$DISK" 2>/dev/null || echo "$DISK")
 
 # ---- 通用重试 (预热构建/nixos-install 共用; 可被环境变量覆盖) ----
-# RETRY_N=20 ./install.sh -d /dev/sda 即可调整, 无需改脚本
-RETRY_N="${RETRY_N:-10}"          # 各阶段最大尝试次数
+# RETRY_N=20 ./install.sh -d /dev/sda 即可调整; 设非 0 值恢复次数上限
+RETRY_N="${RETRY_N:-0}"           # 各阶段最大尝试次数; 0 (默认) = 无限重试, Ctrl-C 随时中止
+# 非法值 (负数/垃圾) 不静默当无限 —— 语义错位比显式失败更难排查
+case "$RETRY_N" in ''|*[!0-9]*) die "RETRY_N 须为非负整数 (0=无限重试), 当前: $RETRY_N" ;; esac
 RETRY_WAIT_S="${RETRY_WAIT_S:-15}"  # 重试间隔秒 (被杀进程内存即时释放, 短等待足够)
 retry() {
-  # retry <阶段描述> <命令 [args...]>: 失败自动重试, 全部失败返回最后一次 rc。
+  # retry <阶段描述> <命令 [args...]>: 失败自动重试, RETRY_N 有限时耗尽返回最后一次 rc。
   # 适用增量语义命令 —— store 内容/已下载闭包跨重试保留, 后续尝试只补差量。
+  # 默认无限重试: 低内存机 nix daemon 被压死的轮次不可预估 (实测封顶内第 9/10
+  # 次仍倒在半途), Ctrl-C (rc=130) 是随时可用的中止途径。
   local desc="$1"; shift
-  local attempt rc=1
-  for attempt in $(seq 1 "$RETRY_N"); do
-    info "$desc 第 $attempt/$RETRY_N 次 (长时静默属正常, 勿中断)..."
+  local attempt=0 rc=1
+  while :; do
+    attempt=$((attempt + 1))
+    info "$desc 第 $attempt 次 (Ctrl-C 可中止; 长时静默属正常, 勿中断)..."
     if "$@"; then
       return 0
     else
@@ -89,15 +96,15 @@ retry() {
     if [ "$rc" = 130 ]; then
       die "$desc 被用户中断 (Ctrl-C), 已停止重试"
     fi
-    if [ "$attempt" != "$RETRY_N" ]; then
-      warn "  ${RETRY_WAIT_S}s 后自动重试 (增量保留, 已完成部分不重复)..."
-      # 清 nix fetcher 缓存: 首拉撞网络坏窗口时损坏结果会被缓存毒化, 命中
-      # 毒化缓存的重试永不自愈 (实测 "flake.nix does not exist" 同错循环)
-      rm -f /root/.cache/nix/fetcher-cache-v4.sqlite
-      sleep "$RETRY_WAIT_S"
+    if [ "$RETRY_N" -gt 0 ] 2>/dev/null && [ "$attempt" -ge "$RETRY_N" ]; then
+      return "$rc"
     fi
+    warn "  ${RETRY_WAIT_S}s 后自动重试 (增量保留, 已完成部分不重复)..."
+    # 清 nix fetcher 缓存: 首拉撞网络坏窗口时损坏结果会被缓存毒化, 命中
+    # 毒化缓存的重试永不自愈 (实测 "flake.nix does not exist" 同错循环)
+    rm -f /root/.cache/nix/fetcher-cache-v4.sqlite
+    sleep "$RETRY_WAIT_S"
   done
-  return "$rc"
 }
 
 # ---- 仓库自带 mihomo (可选): 安装最前置代理 ----
@@ -115,7 +122,7 @@ MIHOMO_DIR="$SCRIPT_DIR/mihomo"
 # 二进制经 scp/解压等方式拷入易丢可执行位 (gitignored 不受 git 管理), 存在即补
 # (脚本体已强制 root, chmod 必成功; 失败仅回退原 -x 判据)
 if [ -f "$MIHOMO_DIR/mihomo" ] && [ ! -x "$MIHOMO_DIR/mihomo" ]; then
-  chmod +x "$MIHOMO_DIR/mihomo" 2>/dev/null
+  chmod +x "$MIHOMO_DIR/mihomo" 2>/dev/null || true   # set -e 下失败只回退 -x 判据
 fi
 if [ -x "$MIHOMO_DIR/mihomo" ]; then
   if ss -tln 2>/dev/null | grep -q ':7890 '; then
@@ -166,7 +173,8 @@ if [ -x "$MIHOMO_DIR/mihomo" ]; then
     # 控制面板 (external-controller 绑 127.0.0.1:9090 + secret; LAN 经上方 DNAT
     # 访问): 安装期可从局域网另一台机器开面板切节点
     if ss -tln 2>/dev/null | grep -q ':9090 '; then
-      info "控制 API 就绪: 本机 http://127.0.0.1:9090/ui, LAN http://$(hostname -I 2>/dev/null | awk '{print $1}'):9090/ui (secret 同 mihomo/config.yaml)"
+      LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      info "控制 API 就绪: 本机 http://127.0.0.1:9090/ui, LAN http://${LAN_IP}:9090/ui (secret 同 mihomo/config.yaml)"
     fi
     # TUN 透明代理需要本机 DNS 指向 mihomo (fake-ip 入口): NM 的 rc-manager=
     # resolvconf 模式下 /etc/resolv.conf 是独立文件, 直接写入。三条与生产
@@ -198,16 +206,21 @@ echo ""
 warn "即将清空 $DISK 全盘数据!"
 lsblk -o NAME,SIZE,TRAN,MODEL "$REAL_DISK"
 echo ""
-printf "即将清空 %s 全盘数据, 继续? [Y/n] " "$DISK"
 # 交互下回车 = 默认确认 (Y); n/N 取消。read 失败 (非交互 EOF, 如管道/CI)
-# 一律取消 —— 全盘 wipe 必须有人工在场, 不因回车默认而放行无人场景。
-if read -r confirm; then
-  case "${confirm:-Y}" in
-    [Yy]) : ;;
-    *) info "已取消"; exit 0 ;;
-  esac
+# 一律取消 —— 全盘 wipe 必须有人工在场, 不因回车默认而放行无人场景;
+# -f/--force 为唯一跳过途径 (Live CD 环境守卫与显式 --disk 仍在前置把关)。
+if [ "$FORCE" = 1 ]; then
+  warn "-f 已跳过磁盘确认"
 else
-  info "非交互输入, 已取消"; exit 0
+  printf "即将清空 %s 全盘数据, 继续? [Y/n] " "$DISK"
+  if read -r confirm; then
+    case "${confirm:-Y}" in
+      [Yy]) : ;;
+      *) info "已取消"; exit 0 ;;
+    esac
+  else
+    info "非交互输入, 已取消"; exit 0
+  fi
 fi
 
 # ============================================================================
@@ -316,6 +329,7 @@ if [ -z "${GITHUB_TOKEN:-}" ] && [ -f "$SCRIPT_DIR/secrets/secrets.yaml" ] \
   # 临时 age 私钥用完即删, 泄漏面与手动传 token 等同;
   # timeout 防网络吊死卡住安装 (首次拉取 sops/ssh-to-age 在慢网络下需数分钟)
   AGE_KEY="$(mktemp)"
+  trap 'rm -f "$AGE_KEY"' EXIT   # 派生私钥即焚也覆盖中断: 解密窗口内 Ctrl-C/异常退出同样清掉
   chmod 600 "$AGE_KEY"
   info "尝试从 secrets.yaml 解密 GitHub token (host key, 超时 10 分钟)..."
   if ! GITHUB_TOKEN="$(timeout 600 nix --extra-experimental-features "nix-command flakes" \
@@ -329,11 +343,12 @@ if [ -z "${GITHUB_TOKEN:-}" ] && [ -f "$SCRIPT_DIR/secrets/secrets.yaml" ] \
     # fetcher, 打破 "解密需工具, 工具需网络" 的死循环
     info "nix shell 通道未命中, 回退 curl 直下 sops/ssh-to-age 二进制..."
     GITHUB_TOKEN=""
+    case "$(uname -m)" in aarch64) REL_ARCH=arm64 ;; *) REL_ARCH=amd64 ;; esac
     if mkdir -p /tmp/decrypt-bin \
       && curl -fsSL --retry 3 --retry-delay 3 --max-time 120 \
-           -o /tmp/decrypt-bin/ssh-to-age "https://github.com/Mic92/ssh-to-age/releases/download/v1.3.0/ssh-to-age.linux-amd64" \
+           -o /tmp/decrypt-bin/ssh-to-age "https://github.com/Mic92/ssh-to-age/releases/download/v1.3.0/ssh-to-age.linux-$REL_ARCH" \
       && curl -fsSL --retry 3 --retry-delay 3 --max-time 180 \
-           -o /tmp/decrypt-bin/sops "https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64" \
+           -o /tmp/decrypt-bin/sops "https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.$REL_ARCH" \
       && chmod +x /tmp/decrypt-bin/ssh-to-age /tmp/decrypt-bin/sops \
       && ! GITHUB_TOKEN="$(
         /tmp/decrypt-bin/ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key > "$AGE_KEY" 2>/dev/null
@@ -350,6 +365,7 @@ if [ -z "${GITHUB_TOKEN:-}" ] && [ -f "$SCRIPT_DIR/secrets/secrets.yaml" ] \
     info "secrets.yaml 解密未命中 (全新安装/key 不匹配/拉取超时), 匿名拉取"
   fi
   rm -f "$AGE_KEY"
+  trap - EXIT   # 私钥已清, 解除 trap 让位后续阶段 (disko 临时文件)
 fi
 if [ -n "${GITHUB_TOKEN:-}" ]; then
   # 追加而非覆盖, 保留调用者已有的 NIX_CONFIG; 作用于脚本内全部 nix 调用
@@ -366,12 +382,13 @@ fi
 info "[2/4] 分区: disko 格式化 $DISK 并挂载到 /mnt"
 
 # ---- 清理残留挂载/swap (幂等: 反复执行/上轮中断后无残留即可直接跑) ----
-# 只关磁盘 swap, 保留阶段 1 创建的 zram (内存 <8G 防编译 OOM)。
+# 只关磁盘 swap, 保留阶段 1 创建的 zram (内存 <8G 防编译 OOM) —— 逐个 swapoff
+# 而不用 swapoff -a 兜底: 那会把 zram 一并关掉, 丢掉低内存机的 OOM 防线。
 # swapfile 持有 btrfs 挂载引用: 残留 swapfile 未关 → umount 失败 → disko
 # 报 "is mounted" (136 实测)。故先全量 swapoff 磁盘 swap, 再 umount 两遍
 # (第一遍收 root, 第二遍确认干净; 失败仍继续, disko 的 wipefs 兜底)。
 for sw in $(swapon --show=NAME --noheadings 2>/dev/null | grep -v -E '^/dev/zram'); do
-  swapoff "$sw" 2>/dev/null || swapoff -a 2>/dev/null || true
+  swapoff "$sw" 2>/dev/null || true
 done
 umount -R /mnt 2>/dev/null || true
 umount -R /mnt 2>/dev/null || true
@@ -405,6 +422,7 @@ for f in "$DISKO_CFG" "hosts/${HOST_DIR}/hardware-configuration.nix" modules/nix
 done
 # 在临时副本中替换设备占位符, 确保原文件不受影响 (swapfile size 已由 adapt 写回原文件)
 DISKO_TMP="$(mktemp -t disko.XXXXXX.nix)"
+trap 'rm -f "$DISKO_TMP"' EXIT   # die/Ctrl-C 中断不把临时 .nix 留在 tmpfs /tmp
 sed "s|DISK_DEVICE_PLACEHOLDER|$REAL_DISK|g" "$DISKO_CFG" > "$DISKO_TMP"
 
 # 低内存安装期 swapfile 宽松化 (仅 MEM < 8G; 仅此副本, 原 disks.nix 不受影响):
@@ -416,8 +434,6 @@ if [ "$MEM_MB" -lt 8192 ] && grep -q 'swap\.swapfile\.size' "$DISKO_TMP"; then
   sed_replace "s|swap\.swapfile\.size = \"[^\"]*\"|swap.swapfile.size = \"8G\"|" "$DISKO_TMP"
   info "低内存安装期: swapfile 放宽至 8G (虚拟内存留足)"
 fi
-# EXIT trap 由下方 store 搬运段统一注册 (kill 后台监控 + 清 DISKO_TMP)
-
 # disko --mode zap_create_mount: 等效 destroy + format + mount, 一步完成
 # 不提供 --yes-wipe-all-disks: 全盘 wipe 必须经上方人工确认 (及 disko 自身
 # 对已分区盘的交互检查), 无人值守场景请先人工清盘或预分区。
@@ -425,9 +441,10 @@ DISKO_FLAGS=(--mode zap_create_mount)
 # --root-mountpoint 指向 /mnt (disko 在该路径下执行挂载)
 # 用 flake 锁定的 disko 包 (flake.nix 导出 inputs.disko): 避免拉 master 触发
 # GitHub API 匿名限流 403 (已修复过的回归), 且与 nixos-install 构建用的锁定版本一致。
+# 输出捕获到日志 (失败后按特征分类提示用); 日志只建一份, 每轮覆盖 ——
+# 重试不再另开新文件 (旧实现首轮日志泄漏在 tmpfs /tmp), 调用方负责 rm
+DISKO_LOG="$(mktemp -t disko-log.XXXXXX)"
 disko_run() {
-  # 输出捕获到日志 (失败后按特征分类提示用); 调用方负责 rm
-  DISKO_LOG="$(mktemp -t disko-log.XXXXXX)"
   nix --extra-experimental-features "nix-command flakes" \
     run "$SCRIPT_DIR#disko" -- "${DISKO_FLAGS[@]}" --root-mountpoint /mnt "$DISKO_TMP" 2>&1 | tee "$DISKO_LOG"
   return "${PIPESTATUS[0]}"
@@ -442,7 +459,11 @@ if ! disko_run; then
     warn "disko 失败: store 空间不足 (容量/inode) —— inode 已扩容, 重试通常通过"
   elif grep -qiE "could not download|unable to download|SSL|TLS|timed out|timeout|connection (reset|refused)|failed to fetch|HTTP error|curl \(|flake\.nix' does not exist|narHash" "$DISKO_LOG"; then
     warn "disko 失败疑似网络异常 (节点不稳/拉取中断/tarball 损坏, 见上方日志)"
-    warn "  处理: 面板 http://$(hostname -I 2>/dev/null | awk '{print $1}'):9090/ui 切换节点后重试, 或直接重跑本脚本"
+    if [ "${export_use_mihomo:-}" = 1 ]; then
+      warn "  处理: 面板 http://${LAN_IP:-127.0.0.1}:9090/ui 切换节点后重试, 或直接重跑本脚本"
+    else
+      warn "  处理: 检查网络连通性后重试, 或直接重跑本脚本"
+    fi
     warn "  自检: curl -m 10 -s -x http://127.0.0.1:7890 -o /dev/null -w '%{http_code}' https://cache.nixos.org/nix-cache-info"
     # fetcher 缓存毒化自愈: 坏 tarball 元数据被缓存后, 命中缓存的重试永不自愈
     rm -f /root/.cache/nix/fetcher-cache-v4.sqlite
@@ -571,18 +592,7 @@ $EMPTY_NIX"
   info "检测到空 .nix 文件, 已全部从 git 恢复"
 fi
 
-# ---- 临时禁用 systemd-oomd: 低内存 VM 防护误杀 (全程最前, 覆盖所有阶段) ----
-# 3.8G VM 实测: nix 求值/构建进程在内存整体 ~85% 时被 systemd-oomd 击杀
-# (cgroup 压力触发, 峰值仅 490MB 也照杀, 无 OOM 记录无输出, 静默消失)。
-# 放脚本最前: 从 sops 解密的 nix shell 到预热构建/nixos-install 的全部内存
-# 峰值阶段都在保护范围。不恢复: Live CD 是临时环境 (tmpfs), 安装完成后
-# reboot 即弃, 新系统从自身配置启动, oomd 状态由 NixOS 声明式管理。
-# 停用失败仅 warn: 该机 oomd 不可停或未启用, 无碍继续 (真 OOM 由内核兜底)。
-if systemctl stop systemd-oomd 2>/dev/null; then
-  info "已停用 systemd-oomd (Live CD 临时环境, 防止OOM)"
-else
-  warn "停用 systemd-oomd 失败 (可能未启用), nix 进程仍可能被 oomd 击杀"
-fi
+# (systemd-oomd 已在脚本最前统一停用, 此处不再重复处理)
 
 # ---- store 存量搬运 (3.8G VM 实战产出) ----
 # Live CD 的 store 是 overlay (tmpfs 上层), 失败重装轮的下载/构建产物会把
@@ -623,7 +633,6 @@ store_drain() {
 # 触发 OOM 而非 ENOSPC, 见上方安全形态注释)。
 # 无待搬运时完全静默 (占用前后无变化的两行纯噪音)。
 store_drain
-trap 'rm -f "$DISKO_TMP"' EXIT
 
 # ---- 预热构建: 低内存 VM 内存峰值分离 (nixos-install 段前置) ----
 # nixos-install 单进程同时扛 求值+编译+复制, 3G 内存 VM 实测在求值早期静默
@@ -636,7 +645,6 @@ trap 'rm -f "$DISKO_TMP"' EXIT
 #     通常更快。
 # 与 nixos-install 段同用通用 retry (次数/间隔见顶部 RETRY_N/RETRY_WAIT_S)。
 # 前置: mihomo/环境变量/GOPROXY 已就位, 拉取走 TUN/代理。
-BUILD_OK=0
 # 与 nixos-install 段同用 retry: 增量语义 (dst store 闭包保留, 重试只补差量)。
 # 成功即闭包入目标盘 store (--print-out-paths 输出即真实路径, 直接可见)。
 if retry "预构建系统闭包" nix --extra-experimental-features "nix-command flakes" \
@@ -652,8 +660,8 @@ fi
 # 为主 (编译峰值已前置到可观测的预热步骤)。历史上 3G 内存 VM 的静默死亡点
 # 已被预热构建接管, 但复制阶段 daemon 仍可能被内存压死, 保留两道防线:
 #   a) 完成标志校验 (下方): 静默死亡立即暴露, 不再误判为成功/卡死;
-#   b) 重试包装 (下方 for 循环): daemon 被杀会留下已复制的 store 内容,
-#      重跑增量复制, 第二次通常只需补差量 (RETRY_N 次封顶)。
+#   b) 重试包装 (retry): daemon 被杀会留下已复制的 store 内容,
+#      重跑增量复制, 第二次通常只需补差量 (RETRY_N 非零时封顶, 默认无限)。
 # 前置: mihomo/环境变量已就位, nixos-install 的拉取走 TUN/代理。
 # nixos-install 内部即 --store local?root=/mnt 构建 (官方机制), 预热产物直接
 # 命中, 无需 store 复制腾挪。
@@ -698,10 +706,18 @@ info "nixos-install 完成标志校验通过 (store=$STORE_N 条)"
 MAIN_USER="$(grep -oP 'mainUser[[:space:]]*=[[:space:]]*(lib\.mkForce[[:space:]]*)?"\K[^"]+' \
   hosts/${HOST_DIR}/local.nix 2>/dev/null | head -1 || true)"
 [ -n "$MAIN_USER" ] || die "无法从 hosts/${HOST_DIR}/local.nix 解析 mainUser, 拒绝继续"
-DEST="/persist/home/${MAIN_USER}/code/nixos-config"
+# 前缀必须带 /mnt: persist 子卷经 disko 挂在 /mnt/persist, 裸 /persist 是
+# Live CD 自己的 tmpfs —— 写进去重启即焚, cp/chown/完成提示却照常"成功"
+# (首装实测: 装完 ~/code/nixos-config 凭空消失, 2302cea 引入即坏)
+mountpoint -q /mnt/persist || die "persist 子卷未挂载 (/mnt/persist), 仓库无法就位"
+DEST="/mnt/persist/home/${MAIN_USER}/code/nixos-config"
 if [ -d "$DEST/.git" ]; then
   # 重装场景: 目标已有仓库 (可能含用户未 push 的改动), 绝不覆盖
   warn "目标仓库已存在 ($DEST), 保留现有内容未覆盖"
+elif [ -e "$DEST" ]; then
+  # 中断残留 (如上次 cp -a 半途而死, 缺 .git): 直接 cp 会嵌套成
+  # nixos-config/nixos-config 且完成提示指向外层空目录 —— 拒绝并交人工
+  die "$DEST 已存在但缺 .git (疑似上次安装中断残留), 请手工清理后重跑"
 else
   mkdir -p "$(dirname "$DEST")"
   cp -a "$SCRIPT_DIR" "$DEST" || die "仓库复制失败 ($DEST), 请检查目标盘空间"
@@ -720,7 +736,7 @@ else
   U_ID="$(grep "^${MAIN_USER}:" /mnt/etc/passwd 2>/dev/null | cut -d: -f3 || true)"
   G_ID="$(grep "^${MAIN_USER}:" /mnt/etc/passwd 2>/dev/null | cut -d: -f4 || true)"
   if [ -n "$U_ID" ]; then
-    chown -R "${U_ID}:${G_ID:-$U_ID}" /persist/home/${MAIN_USER}/code
+    chown -R "${U_ID}:${G_ID:-$U_ID}" "/mnt/persist/home/${MAIN_USER}/code"
     info "仓库已就位: $DEST (属主 ${MAIN_USER})"
   else
     warn "未能确定 ${MAIN_USER} 的 uid, 仓库复制在 $DEST (属主 root, 首启后手动 chown)"
