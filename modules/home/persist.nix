@@ -51,21 +51,36 @@ in
     files = persistFiles;
   };
 
-  # 中途迁移适配: 目标已存在普通文件时 impermanence 激活按数据保护拒绝
-  # (bind mount 目标不能有旧数据), 需把 ~ 下的真实数据先移入 /persist 端。
-  # 本钩子在目录创建 (persist-files) 之后、bind unit 启动之前执行:
-  # 目标不存在 (全新安装) 或已是挂载点 (正常状态) 时跳过, 一次生效后幂等。
+  # 中途迁移 + 竞态自愈 (entryBefore persist-files): 目标已存在普通文件时
+  # impermanence 会按数据保护拒绝 bind ("A file already exists"), 且该片段
+  # 失败会中止整个 HM 激活 —— 本钩子若排在 persist-files 之后 (entryAfter)
+  # 就再没机会执行 (实测踩坑), 故必须先于 persist-files 清障:
+  #   目标不存在 (全新安装) 或已是挂载点 (正常状态) → 跳过, 幂等;
+  #   /persist 端无数据 → 目标挪入 /persist (首次启用持久化的迁移, -n 防覆盖);
+  #   /persist 端已有数据 (fcitx5 运行时在 bind 断窗内再生 yaml 的竞态) →
+  #     目标挪成带时间戳的 conflict 备份, /persist 权威数据经 bind 接管。
+  #     自 bind 断开以来的运行时状态变化留在备份里 (fcitx5 重部署后从 bind
+  #     读权威副本), 备份位于 @root 不持久化, 仅备查可随时删除。
   # 仅精确路径条目; 通配条目跳过 (无法安全展开迁移)。
-  home.activation.persistMigrate = lib.hm.dag.entryAfter [ "persist-files" ] ''
+  # 挂载点判定不可用 mountpoint(1): HM activate 的 PATH 无 util-linux
+  # (实测 command not found, rc=127 经 ! 反转恒为真, 已挂载目标也被误判,
+  # mv 挂载点报 busy)。改查 /proc/mounts 文本 (路径无空格, 首尾空格界定的
+  # 字段匹配足够, bind file 挂载同样登记其中)。
+  home.activation.persistMigrate = lib.hm.dag.entryBefore [ "persist-files" ] ''
+    is_mounted() { grep -qs " $1 " /proc/mounts; }
     for entry in ${lib.escapeShellArgs persistFiles}; do
       case "$entry" in
         *"*"*) continue ;;
       esac
       target="$HOME/$entry"
-      if { [ -e "$target" ] || [ -L "$target" ]; } && ! mountpoint -q "$target"; then
+      if { [ -e "$target" ] || [ -L "$target" ]; } && ! is_mounted "$target"; then
         source="/persist/home/${mainUser}/$entry"
         mkdir -p "$(dirname "$source")"
-        mv -n -- "$target" "$source"   # -n: /persist 端已有数据时不覆盖
+        if [ -e "$source" ]; then
+          mv -- "$target" "$target.conflict.$(date +%Y%m%d-%H%M%S)" || true
+        else
+          mv -n -- "$target" "$source"
+        fi
       fi
     done
   '';

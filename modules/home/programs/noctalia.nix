@@ -1,4 +1,4 @@
-# noctalia 配置 —— 壁纸 + 顶栏样式 + 分辨率切换按钮 + GTK 明暗同步
+# noctalia 配置 —— 壁纸 (官方插件) + 顶栏样式 + GTK 明暗同步
 { pkgs, noctalia, mainUser, lib, ... }:
 let
   # GTK 明暗跟随 Noctalia 主题模式 (由 config.toml [hooks].theme_mode_changed 触发)
@@ -26,9 +26,37 @@ in {
   # 显示设置按钮: 分辨率/缩放 合并到一个菜单 (res-menu: niri msg + fuzzel 两级)
   home.packages = [
     theme-sync
-    # 视频壁纸插件依赖 (noctalia/mpvpaper): mpvpaper 播放 + mpv 抽帧
+    # 视频壁纸官方插件 (noctalia/mpvpaper) 运行时依赖: mpvpaper 播放 + mpv;
+    # socat 供插件跟踪 mpv IPC (幻灯片高亮/末帧抽取同步), ffmpeg 供末帧抽取
     pkgs.mpvpaper
     pkgs.mpv
+    pkgs.ffmpeg
+    pkgs.socat
+    # 动态壁纸播放中切静态壁纸的桥接: mpvpaper 播放时主壁纸层被撤下 (插件
+    # 设计), 单纯 wallpaper-set 视觉无效。本钩子在检测到视频在播时先
+    # clear-all 再把所选静态图设回去 = "切静态壁纸即退出动态壁纸"。
+    # 防递归/防误杀: 插件播放与切换时会把末帧图 set 回主壁纸 (取色用),
+    # 路径全部落在 ~/.cache/noctalia/mpvpaper/ 下 (两种命名: <connector>_static.jpg
+    # 与 <路径转写>.jpg, 后者不以 _static 结尾) —— 按目录前缀统一放行,
+    # 否则选视频起播的末帧回填会被误判为手动切图, 视频刚起就被钩子杀掉
+    # (实测: 桌面只剩末帧, 且插件状态错位堆积多个 mpvpaper 进程)。
+    # 检测播放用 pgrep -f "bin/mpvpaper": 插件经 nixpkgs wrapper 启动,
+    # 进程 comm 是 ".mpvpaper-wrapp", pgrep -x mpvpaper 永不匹配 (实测踩坑);
+    # -f 匹配 cmdline 只命中播放器本体 (mpv 子进程 cmdline 不含 bin/mpvpaper)。
+    (pkgs.writeShellApplication {
+      name = "wallpaper-video-guard";
+      runtimeInputs = [ pkgs.procps ];
+      text = ''
+        p="''${NOCTALIA_WALLPAPER_PATH,,}"
+        case "$p" in
+          */noctalia/mpvpaper/*) exit 0 ;;
+          *.mp4|*.webm|*.mkv|*.mov|*.gif|*.avi|*.m4v) exit 0 ;;
+        esac
+        pgrep -f "bin/mpvpaper" >/dev/null 2>&1 || exit 0
+        noctalia msg plugin noctalia/mpvpaper:service all clear-all
+        noctalia msg wallpaper-set "''${NOCTALIA_WALLPAPER_PATH}"
+      '';
+    })
     (pkgs.writeShellApplication {
       name = "res-menu";
       runtimeInputs = [ pkgs.niri pkgs.fuzzel ];
@@ -107,7 +135,11 @@ in {
     path = "/home/${mainUser}/wallpaper/noctalia-wallpaper.png"
 
     [wallpaper.automation]
-    enabled = true
+    # 关闭: automation 轮换与手动切图在 wallpaper_changed 钩子层面无来源
+    # 标识, 保留它会让视频播放期间定时轮换误触发 "停视频换图" (钩子无法
+    # 区分); 且轮换的静态图被视频层盖住本就不可见。静态图固定一张, 想换
+    # 走设置面板 (会经 wallpaper-video-guard 停视频并应用所选图)。
+    enabled = false
     interval_seconds = 1800
     order = "random"
     recursive = true
@@ -192,21 +224,9 @@ in {
 
     start = ["launcher", "workspaces"]
     center = ["clock"]
-    end = ["media", "tray", "notifications", "clipboard", "network", "bluetooth", "volume", "brightness", "display", "mpvpaper"]
-
-    # ============================================================
-    # 显示设置按钮 —— 分辨率/缩放 合并菜单 (res-menu: 两级 fuzzel)
-    # ============================================================
-    [widget.display]
-    type    = "custom_button"
-    glyph   = "aspect-ratio"
-    tooltip = "显示设置"
-    left    = "exec res-menu"   # 新版: command 已改为 left gesture binding
-
-    # 视频壁纸控制 widget (noctalia/mpvpaper 插件): 点击打开 picker 选视频/切换/停止
-    [widget.mpvpaper]
-    type  = "noctalia/mpvpaper:mpvpaper"
-    glyph = "movie"
+    end = ["media", "tray", "notifications", "clipboard", "network", "bluetooth", "volume", "brightness"]
+    # 视频壁纸: bar 不放按钮, picker 由 Mod+W 唤出 (见 binds.kdl);
+    # 插件配置见下方 [plugins] 段。
 
     # ============================================================
     # 网络 widget —— 只显示图标 (网卡名称在悬浮提示中)
@@ -226,11 +246,12 @@ in {
     drawer = true  # 托盘图标默认收进抽屉, 点击展开
 
     # ============================================================
-    # 视频壁纸 (noctalia/mpvpaper 插件) —— 动态背景 + 帧取色
+    # 视频壁纸 (noctalia/mpvpaper 官方插件) —— 动态背景 + 帧取色
     # 插件由 Noctalia 运行时从官方插件仓库拉取 (plugins source official)。
-    # extract_last_frame: 插件用 ffmpeg 抽视频帧, 经 noctalia.setWallpaper
-    # 设为 Noctalia 壁纸 → M3 取色 → 全生态 (fcitx/kitty/菜单) 随视频帧变色。
-    # 视频放入 ${mainUser}/wallpaper/video/ 即自动生效 (可在设置里切换)。
+    # extract_last_frame: 停止/暂停时抽视频末帧设为 Noctalia 壁纸 → M3 取色
+    # → 全生态 (fcitx/kitty/菜单) 随视频帧变色。视频放入
+    # ${mainUser}/wallpaper/video/, Mod+W (binds.kdl) 唤出官方 picker 选视频。
+    # 图片壁纸走 Noctalia 设置内的壁纸选择器 (automation 30min 轮换照常)。
     # ============================================================
     [plugins]
     enabled = ["noctalia/mpvpaper"]
@@ -240,8 +261,9 @@ in {
     mute = true
     extract_last_frame = true
 
-    # GTK 明暗跟随: Noctalia 切换明暗时同步 GSettings + GTK3 settings.ini (libadwaita/GTK/Firefox)
+    # GTK 明暗跟随 + 动态壁纸切静态桥接
     [hooks]
     theme_mode_changed = ["theme-sync"]   # 注意: home-manager 包在 /etc/profiles, 非 ~/.nix-profile
+    wallpaper_changed = ["wallpaper-video-guard"]   # 播放中切静态壁纸 → 停视频并应用所选图
   '';
 }

@@ -21,6 +21,8 @@ binds {
     Mod+Space          { spawn-sh "noctalia msg panel-toggle launcher"; }
     Mod+S              { spawn-sh "noctalia msg panel-toggle control-center"; }
     Mod+Comma          { spawn-sh "noctalia msg settings-toggle"; }
+    // 视频壁纸 picker (mpvpaper 插件面板; bar 无按钮, 快捷键唤出选视频/轮播/停止)
+    Mod+W              { spawn-sh "noctalia msg panel-toggle noctalia/mpvpaper:picker"; }
     Mod+Shift+Slash    { show-hotkey-overlay; }
 
     // -------- 焦点移动(hjkl/方向键) --------
