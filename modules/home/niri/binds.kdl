@@ -11,11 +11,16 @@ binds {
     Mod+Shift+N { spawn "eye-care"; }                      // 护眼模式 (暖色温 + 关模糊)
     Mod+Grave   { spawn "niri-scratch-toggle" "kitty"; }   // Scratchpad 持久浮动终端
 
+    // -------- 窗口切换器 (niri 26.04 内置 recent-windows) --------
+    // 用默认键位 Alt+Tab/Alt+Shift+Tab/Mod+Shift+Tab (Alt/Mod+grave = 同 app 窗口);
+    // 此处不要绑定这些键 —— 普通 binds 优先级高于 recent-windows binds, 绑了会覆盖默认。
+    // 顶栏 Scope 面板: All/Output/Workspace, 切换器内按 S 循环作用域。
+    // (曾用 noctalia msg window-switcher, 已统一到 niri 原生)
+
     // -------- Noctalia (v5 IPC: "noctalia msg <cmd>") --------
     Mod+Space          { spawn-sh "noctalia msg panel-toggle launcher"; }
     Mod+S              { spawn-sh "noctalia msg panel-toggle control-center"; }
     Mod+Comma          { spawn-sh "noctalia msg settings-toggle"; }
-    Alt+Tab            { spawn-sh "noctalia msg window-switcher"; }
     Mod+Shift+Slash    { show-hotkey-overlay; }
 
     // -------- 焦点移动(hjkl/方向键) --------

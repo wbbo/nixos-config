@@ -188,15 +188,6 @@ layer-rule {
     }
 }
 
-// Noctalia 窗口切换器模糊
-layer-rule {
-    match namespace="noctalia-window-switcher"
-    background-effect {
-        blur true
-        xray false
-    }
-}
-
 // Noctalia 壁纸背景(backdrop layer)
 layer-rule {
     match namespace="^noctalia-wallpaper"
