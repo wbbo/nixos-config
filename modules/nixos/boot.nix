@@ -50,6 +50,13 @@ let
       fi
 
       echo "$OFFSET" > /sys/power/resume_offset
+      # 断电模式用 shutdown (内核直关) 而非默认 platform (ACPI S4):
+      # platform 下固件进入 S4 后若已有 pending 唤醒事件 (键鼠/PCIe 设备,
+      # 本机 XHCI/PEG/RP* 全 enabled) 会立即弹回原会话不断电 —— 实测踩坑
+      # (Saving NVS → Creating image → 未断电直接 Waking up from S4)。
+      # shutdown 模式写完镜像直接 poweroff, 不受 pending 唤醒影响;
+      # 唤醒侧不受影响 (resume 只认 cmdline, 与 /sys/power/disk 无关)。
+      echo shutdown > /sys/power/disk
       echo "hibernate-now: resume_offset=$OFFSET, hibernating" >&2
       echo disk > /sys/power/state
     '';
