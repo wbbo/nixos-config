@@ -47,6 +47,8 @@ in
       # *.custom.yaml 是 HM store 符号链接, 声明式自生成。
       ".local/share/fcitx5/rime/rime_ice.userdb"
       ".local/share/fcitx5/rime/sync"
+      # pigma (TUI 网易云) 配置与登录态
+      ".config/pigma"
     ];
     files = persistFiles;
   };

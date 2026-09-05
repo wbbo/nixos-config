@@ -27,6 +27,7 @@
     ./programs/c-cpp.nix
     ./programs/starship.nix
     ./programs/scratchpad.nix
+    ./programs/pigma.nix
     ./persist.nix
   ];
 
