@@ -73,6 +73,9 @@ TARGET_SWAP_G=$(( (MEM_MB + 1023) / 1024 ))
 SWAP_FILE=/swap/swapfile
 if [ -f "$SWAP_FILE" ]; then
   SWAP_ACT_G=$(stat -c %s "$SWAP_FILE" 2>/dev/null | awk '{printf "%d", $1/1073741824}')
+  # 激活态校验: 大小达标 ≠ 可用 (失败残骸/激活失败会留下合法大小的死文件)
+  SWAP_ACTIVE=0
+  swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$SWAP_FILE" && SWAP_ACTIVE=1
   if [ "${SWAP_ACT_G:-0}" -lt "$TARGET_SWAP_G" ]; then
     warn "swapfile ${SWAP_ACT_G}G < 内存等大 ${TARGET_SWAP_G}G: 休眠将失效, 尝试自动重建"
     SWAP_USED_M=$(swapon --show=USED --bytes --noheadings 2>/dev/null \
@@ -92,10 +95,19 @@ if [ -f "$SWAP_FILE" ]; then
          && sudo swapon "$SWAP_FILE"; then
         info "swapfile 已重建: ${SWAP_ACT_G}G → ${TARGET_SWAP_G}G (resume_offset 由本轮适配探测修正)"
       else
+        # 清残骸: 残留完整大小文件会落入下方"达标未激活"分支之外被永久无视
+        sudo rm -f "$SWAP_FILE" 2>/dev/null || true
         warn "swapfile 自动重建失败, 请人工处理 (swapoff → btrfs filesystem mkswapfile → swapon)"
       fi
     else
       warn "swap 使用量高 (${SWAP_USED_M}M ≥ 可用内存 ${FREE_M}M), 跳过自动重建, 请人工处理"
+    fi
+  elif [ "$SWAP_ACTIVE" = 0 ]; then
+    # 大小达标但未激活: 补激活一次 (可能是漏挂载); 失败即残骸/损坏, 人工重建
+    if sudo swapon "$SWAP_FILE" 2>/dev/null; then
+      info "swapfile ${SWAP_ACT_G}G 达标但此前未激活, 已重新挂载"
+    else
+      warn "swapfile ${SWAP_ACT_G}G 无法激活 (失败残骸/损坏), 请人工处理: rm $SWAP_FILE 后 btrfs filesystem mkswapfile --size ${TARGET_SWAP_G}G $SWAP_FILE"
     fi
   elif [ "${SWAP_ACT_G:-0}" -gt "$TARGET_SWAP_G" ]; then
     info "swapfile ${SWAP_ACT_G}G > 内存等大 ${TARGET_SWAP_G}G: 无影响 (休眠约束满足); 需回收磁盘可人工收缩"
