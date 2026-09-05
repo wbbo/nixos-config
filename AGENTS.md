@@ -336,5 +336,6 @@ home-manager-restart) 每次 switch 跨实例 restart 触发重跑,
 | 6 | 规则集单 CDN (jsdelivr), 缓存空 + CDN 不可达时规则静默落空直落 MATCH,PROXY | 三 CDN (cdn/fastly/gcore) 激活期预拉 /persist 缓存, marker 24h 防重试轰炸 | `69e3572` |
 
 同时落地的相关修复: rime 词库持久化中途迁移竞态 (fcitx5 运行时再生 yaml 挡住 bind,
-activation 失败 exit 4) —— `persistMigrate` 激活钩子自动迁移 + 一次性手工收尾,
-详见 modules/home/persist.nix 注释。
+activation 失败 exit 4) —— `persistMigrate` 激活钩子自动迁移 + 一次性手工收尾。
+2026-09-05 起钩子退役: rime 持久化已从「2 目录 + 2 文件 bind」整并为一个目录级
+bind (`.local/share/fcitx5/rime`), 文件级 bind 竞态不复存在, 详见 modules/home/persist.nix。
