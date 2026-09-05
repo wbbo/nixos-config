@@ -92,7 +92,10 @@ in
   # 同源, 仅当两者不一致 (balance 后未更新) 时唤醒会失败。
   boot.kernelParams = [
     "nmi_watchdog=0"
-    "resume_offset=533760"
+    # 值为最近一次探测实测 (探测失败时的回退, 与运行时 hibernate-now 动态探测
+    # 同源)。swapfile 重建/balance 移动后此值会过期 —— build.sh 构建期注入
+    # 保证系统侧始终新鲜, 仓库回退值需在重建 swapfile 后手工同步一次。
+    "resume_offset=34743552"
   ];
   boot.blacklistedKernelModules = [ "iTCO_wdt" "iTCO_vendor_support" "sp5100_tco" ];
 
