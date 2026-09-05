@@ -80,17 +80,19 @@ if [ -f "$SWAP_FILE" ]; then
     # 可用内存直接读 /proc/meminfo MemAvailable: free 的表头随 locale 本地化
     # (中文为"内存:"), awk '/Mem:/' 匹配失败致 FREE_M 空、判据恒假误跳重建
     FREE_M=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
+    # 重建走 btrfs filesystem mkswapfile (与 disko 安装路径同源): 内部设
+    # NOCOW + fallocate + mkswap。不能手写 fallocate/truncate+mkswap —— 无
+    # NOCOW 时 swapon 报 EINVAL "swapfile must not be copy-on-write"
+    # (truncate 稀疏文件同样不可 swapon); mkswap 不校验 COW, 失败晚暴露。
     if [ "${SWAP_USED_M:-0}" -lt "${FREE_M:-0}" ]; then
       if sudo swapoff "$SWAP_FILE" 2>/dev/null \
          && sudo rm -f "$SWAP_FILE" \
-         && (sudo fallocate -l "${TARGET_SWAP_G}G" "$SWAP_FILE" \
-             || sudo truncate -s "${TARGET_SWAP_G}G" "$SWAP_FILE") \
+         && sudo btrfs filesystem mkswapfile --size "${TARGET_SWAP_G}G" "$SWAP_FILE" \
          && sudo chmod 600 "$SWAP_FILE" \
-         && sudo mkswap "$SWAP_FILE" >/dev/null 2>&1 \
          && sudo swapon "$SWAP_FILE"; then
         info "swapfile 已重建: ${SWAP_ACT_G}G → ${TARGET_SWAP_G}G (resume_offset 由本轮适配探测修正)"
       else
-        warn "swapfile 自动重建失败, 请人工处理 (swapoff → 重建 → mkswap → swapon)"
+        warn "swapfile 自动重建失败, 请人工处理 (swapoff → btrfs filesystem mkswapfile → swapon)"
       fi
     else
       warn "swap 使用量高 (${SWAP_USED_M}M ≥ 可用内存 ${FREE_M}M), 跳过自动重建, 请人工处理"
