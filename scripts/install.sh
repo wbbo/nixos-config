@@ -536,7 +536,8 @@ if [ -f "$SWAPFILE" ]; then
 else
   warn "swapfile 不存在 ($SWAPFILE), disko 可能未创建, 继续安装"
 fi
-info "总 swap: $(free -m | awk '/Swap:/{print $2}')M"
+# free 的表头随 locale 本地化 (中文为"交换:"), awk '/Swap:/' 匹配失败 → 直接读 meminfo
+info "总 swap: $(awk '/SwapTotal/{print int($2/1024)}' /proc/meminfo)M"
 
 # swapfile 启用后虚拟内存扩大, 重算 store 可写层上限并提升 (阶段 1 无磁盘
 # swap 时算出的值偏保守; 只增不减, 见 resize_store_tmpfs)

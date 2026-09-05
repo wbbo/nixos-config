@@ -77,7 +77,9 @@ if [ -f "$SWAP_FILE" ]; then
     warn "swapfile ${SWAP_ACT_G}G < 内存等大 ${TARGET_SWAP_G}G: 休眠将失效, 尝试自动重建"
     SWAP_USED_M=$(swapon --show=USED --bytes --noheadings 2>/dev/null \
       | awk '{s+=$1} END{printf "%d", s/1024/1024}')
-    FREE_M=$(free -m | awk '/Mem:/{print $NF}')
+    # 可用内存直接读 /proc/meminfo MemAvailable: free 的表头随 locale 本地化
+    # (中文为"内存:"), awk '/Mem:/' 匹配失败致 FREE_M 空、判据恒假误跳重建
+    FREE_M=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
     if [ "${SWAP_USED_M:-0}" -lt "${FREE_M:-0}" ]; then
       if sudo swapoff "$SWAP_FILE" 2>/dev/null \
          && sudo rm -f "$SWAP_FILE" \
