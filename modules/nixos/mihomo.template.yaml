@@ -7,7 +7,7 @@ proxies:
 proxy-providers:
 $PROVIDERS
 # 策略组
-proxy-groups: [{name: PROXY, exclude-filter: "(?i)^(.*(?:🏷|邀请|加入|限国外使用|港|距离下次重置|一元\\.com|yiyuanjichang\\.com|20倍|流量)).*", type: fallback, url: "http://www.gstatic.com/generate_204", expected-status: 204, interval: 120, timeout: 5000, lazy: false, include-all: true, filter: "(?i)^(.*(?:)).*"}]
+proxy-groups: [{name: PROXY, exclude-filter: "(?i)^(.*(?:🏷|邀请|加入|限国外使用|港|距离下次重置|一元\\.com|yiyuanjichang\\.com|20倍|流量)).*", type: url-test, url: "http://www.gstatic.com/generate_204", expected-status: 204, interval: 120, timeout: 5000, tolerance: 75, lazy: false, include-all: true, filter: "(?i)^(.*(?:)).*"}]
 rules:
   # =============== 本地/调试/管理域名（最高优先级）===============
   - DOMAIN-SUFFIX,nsfocus.com,DIRECT
