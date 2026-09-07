@@ -4,18 +4,10 @@
 # 数据实际落在 /persist/home/<user>/<dir>, 与本仓库既有布局一致。
 # 实现为 boot 期 root bind mount (~/<dir> <-> /persist/home/<user>/<dir>),
 # 对应用不可见 (真实目录), 早于登录生效。
-# ~/.cc-switch 例外 (cc-switch 需要 nofail 兜底), 由 nixos/persist.nix 手写
-# bind mount + tmpfiles 预建。
-# 注意: files 新增条目后, 若 ~ 下已存在真实数据 (首次启用持久化的场景),
-# impermanence 激活会按数据保护拒绝 bind — 见下方 activation.persistMigrate
-# 钩子, 自动把数据迁进 /persist 端 (幂等, 无需手工搬迁)。
-{ mainUser, config, lib, ... }:
-let
-  persistFiles = [
-    ".local/share/fcitx5/rime/user.yaml"
-    ".local/share/fcitx5/rime/installation.yaml"
-  ];
-in
+# 只用目录级 bind, 不用文件级 bind: 文件 bind 有运行时再生竞态
+# (fcitx5 运行时再生 yaml 挡住 bind 曾致 activation 失败 exit 4,
+# 当年为此引入的 persistMigrate 迁移钩子已随整目录化退役)。
+{ ... }:
 {
   home.persistence."/persist" = {
     directories = [
@@ -40,33 +32,17 @@ in
       ".local/bin"
       ".local/share/claude"
       ".codex"
-      # fcitx5/rime 输入法学习数据 (不可再生): userdb=词频/自造词/使用习惯,
-      # sync=rime sync 词库快照, user.yaml/installation.yaml=方案选择与
-      # 同步设备身份 (installation_id 变了会被 sync 当新设备)。
-      # build/ 编译产物 (73M) 不持久化 —— fcitx5RimeRedeploy 钩子可重建;
-      # *.custom.yaml 是 HM store 符号链接, 声明式自生成。
-      ".local/share/fcitx5/rime/rime_ice.userdb"
-      ".local/share/fcitx5/rime/sync"
+      # cc-switch 数据目录 (配置切换器, 拒绝 symlink 故必须 bind — impermanence
+      # 目录持久化即 bind, 满足)。原为 modules/nixos/persist.nix 手写挂载, 已并入。
+      ".cc-switch"
+      # fcitx5/rime 输入法数据整目录持久化: userdb=词频/自造词, sync=词库
+      # 快照, user.yaml/installation.yaml=方案选择与同步设备身份
+      # (installation_id 变了会被 sync 当新设备)。整目录 bind 取代原先
+      # 2 目录 + 2 文件共 4 条 bind, 消灭文件级 bind 竞态 (见文件头注释)。
+      # build/ 编译产物 (~73M) 一并持久: 可重建, 体量可接受, 换清单极简。
+      ".local/share/fcitx5/rime"
+      # pigma (TUI 网易云) 配置与登录态
+      ".config/pigma"
     ];
-    files = persistFiles;
   };
-
-  # 中途迁移适配: 目标已存在普通文件时 impermanence 激活按数据保护拒绝
-  # (bind mount 目标不能有旧数据), 需把 ~ 下的真实数据先移入 /persist 端。
-  # 本钩子在目录创建 (persist-files) 之后、bind unit 启动之前执行:
-  # 目标不存在 (全新安装) 或已是挂载点 (正常状态) 时跳过, 一次生效后幂等。
-  # 仅精确路径条目; 通配条目跳过 (无法安全展开迁移)。
-  home.activation.persistMigrate = lib.hm.dag.entryAfter [ "persist-files" ] ''
-    for entry in ${lib.escapeShellArgs persistFiles}; do
-      case "$entry" in
-        *"*"*) continue ;;
-      esac
-      target="$HOME/$entry"
-      if { [ -e "$target" ] || [ -L "$target" ]; } && ! mountpoint -q "$target"; then
-        source="/persist/home/${mainUser}/$entry"
-        mkdir -p "$(dirname "$source")"
-        mv -n -- "$target" "$source"   # -n: /persist 端已有数据时不覆盖
-      fi
-    done
-  '';
 }

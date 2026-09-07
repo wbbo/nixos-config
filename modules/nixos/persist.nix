@@ -1,4 +1,4 @@
-# 家目录持久化(系统级)—— neededForBoot 标记 + cc-switch bind mount
+# 家目录持久化(系统级)—— neededForBoot 标记
 # 目录持久化主体由 impermanence 接管 (flake input, NixOS 模块自动给
 # home-manager.sharedModules 注入 home.persistence 选项):
 # modules/home/persist.nix 用 home.persistence."/persist".directories 声明,
@@ -8,9 +8,10 @@
 # /persist/home 与 /persist/home/<mainUser> 的预建 (0700 属主) 由 impermanence
 # 的 createPersistentStorageDirs activation script 负责, 不再手写 tmpfiles。
 # 本文件只保留 impermanence 覆盖不到的部分:
-# - .cc-switch bind mount (cc-switch 拒绝符号链接; 保留手写以维持
-#   nofail 兜底 + tmpfiles 预建行为, 已验证)
 # - docker 数据目录预建 (数据就在 /persist/docker, 不做挂载遮蔽)
+# (原 cc-switch 手写 bind 已并入 modules/home/persist.nix 的 impermanence
+#  声明 —— cc-switch 虽拒 symlink, 但 impermanence 目录持久化即 bind,
+#  行为等价; 权限按 /persist 源端 0700 wbb 复制)
 { config, lib, ... }:
 {
   # uid/gid 分配表持久化 (impermanence): 根分区每次重启重置, 若不持久化
@@ -22,9 +23,6 @@
   ];
 
   systemd.tmpfiles.rules = [
-    # cc-switch bind mount 的源目录 + 挂载点 (都需存在, 否则 mount 失败)
-    "d /persist/home/${config.mainUser}/.cc-switch 0700 ${config.mainUser} ${config.mainUser} - -"
-    "d /home/${config.mainUser}/.cc-switch 0700 ${config.mainUser} ${config.mainUser} - -"
     # docker 数据目录 (镜像/容器, root 所有)
     "d /persist/docker 0755 root root - -"
   ];
@@ -32,11 +30,4 @@
   # impermanence 断言: 持久化卷与挂载目标卷都必须 neededForBoot
   fileSystems."/".neededForBoot = lib.mkForce true;
   fileSystems."/persist".neededForBoot = lib.mkForce true;
-
-  # cc-switch: bind mount 使 ~/.cc-switch 为真实目录 (数据在 @persist, 跨重建保留)
-  fileSystems."/home/${config.mainUser}/.cc-switch" = {
-    device = "/persist/home/${config.mainUser}/.cc-switch";
-    fsType = "none";
-    options = [ "bind" "nofail" ];
-  };
 }
