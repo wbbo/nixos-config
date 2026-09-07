@@ -178,9 +178,15 @@ ${prefillCmds}
       ''
     );
 
-    # 本机 fake-ip 闭环配套 (dns.listen ":53" 在模板, 兼路由器/旁路由):
-    # nameservers + NM dns=none 让本机查询全量到 mihomo; NM 不拦截时 DHCP 的
-    # 网关 DNS 会混入 resolv.conf, 分流时真时假。mihomo 挂则解析挂, 明确取舍。
+    # 本机 fake-ip 闭环 (dns.listen ":53" 在模板, 兼路由器/旁路由): dns-hijack
+    # any:53 把 TUN 内所有 53 查询截回 mihomo, 本机 resolv.conf 写什么公网上游
+    # 都等价 —— NM dns=none 拦掉 DHCP 下发的网关 DNS (route-exclude 段绕过劫持,
+    # 拿到的是污染应答且 mihomo 无域名元数据救不回, 绝不可用)。mihomo 挂则
+    # 解析挂, 明确取舍。
+    # resolv.conf 静态化: 三条公网 DNS (MAXNS=3 恰满, 全被劫持回 mihomo, 写谁
+    # 只是语义摆设), 真正作用是把网关/内网 DNS 挡在列外。关 resolvconf 防
+    # openresolv -u 把静态文件覆盖成 NM dns=none 下的空文件 (其 wrapper 变为
+    # 显式报错, dispatcher 不再装)。
     networking.networkmanager.dns = "none";
 
     # 路由器/旁路由场景: LAN 设备把 DNS 指向本机 :53 的查询入口 (INPUT 链;
@@ -235,16 +241,14 @@ ${prefillCmds}
     networking.firewall.checkReversePath = "loose";
     networking.firewall.trustedInterfaces = [ "Mihomo" ];
 
-    # 系统 DNS: mihomo 主解析 + 异常兜底 (恰好 3 条 = glibc MAXNS 上限)。
-    # resolv.conf 静态化: NM dns=none 后本不需要 resolvconf 的动态合并, 且
-    # openresolv 的 local_only 过滤 (默认只要列表里出现 127.0.0.1, 非 127.x
-    # 上游一概丢弃) 会把兜底条目在每次 resolvconf -u 后吞掉 —— 直接写静态
-    # 文件, 同时关掉 resolvconf (其 wrapper 变为显式报错, dispatcher 不再装)。
+    # 系统 DNS 静态化 (见上方 dns=none 注释): 1.1.1.1/8.8.8.8 + 9.9.9.9
+    # (Quad9, 恶意域名过滤, 常用第三极) —— 全为公网 DNS, 查询出网即被
+    # dns-hijack any:53 截回 mihomo 走 fake-ip。
     networking.resolvconf.enable = false;
     environment.etc."resolv.conf".text = ''
-      nameserver 127.0.0.1
       nameserver 1.1.1.1
       nameserver 8.8.8.8
+      nameserver 9.9.9.9
       options edns0
     '';
   };

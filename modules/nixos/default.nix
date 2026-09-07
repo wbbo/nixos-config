@@ -24,6 +24,7 @@
     ./docker.nix
     ./libvirt.nix
     ./flatpak.nix
+    ./steam.nix
     ./udisks.nix
     ./home-manager.nix
   ];

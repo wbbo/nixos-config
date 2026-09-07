@@ -5,6 +5,13 @@
   services.blueman.enable = true;
   services.power-profiles-daemon.enable = true;
 
+  # MCE (机器检查异常) 记录解码 —— i9-13900KF 存在 Vmin Shift 不可逆劣化
+  # (2026-09 确诊: 随机用户态 SIGSEGV + MCE, nix/claude/pigma/rime_deployer
+  # 多进程受累), rasdaemon 持续解码 MCE 供观测缓解效果与劣化速度:
+  #   ras-mc-ctl --summary / --errors
+  # (26.05 module 位于 hardware.rasdaemon, 非 services.hardware)
+  hardware.rasdaemon.enable = true;
+
   # logind 对合盖不动作 (不挂起; 锁屏由 niri switch-events 执行,
   # 见 modules/home/niri/config.kdl)。台式机无 lid 事件, 无害。
   # 26.05 起旧选项 services.logind.lidSwitch* 已废弃, 改用 settings.Login 映射
