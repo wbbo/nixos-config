@@ -50,6 +50,13 @@ let
       fi
 
       echo "$OFFSET" > /sys/power/resume_offset
+      # 断电模式用 shutdown (内核直关) 而非默认 platform (ACPI S4):
+      # platform 下固件进入 S4 后若已有 pending 唤醒事件 (键鼠/PCIe 设备,
+      # 本机 XHCI/PEG/RP* 全 enabled) 会立即弹回原会话不断电 —— 实测踩坑
+      # (Saving NVS → Creating image → 未断电直接 Waking up from S4)。
+      # shutdown 模式写完镜像直接 poweroff, 不受 pending 唤醒影响;
+      # 唤醒侧不受影响 (resume 只认 cmdline, 与 /sys/power/disk 无关)。
+      echo shutdown > /sys/power/disk
       echo "hibernate-now: resume_offset=$OFFSET, hibernating" >&2
       echo disk > /sys/power/state
     '';
@@ -92,7 +99,10 @@ in
   # 同源, 仅当两者不一致 (balance 后未更新) 时唤醒会失败。
   boot.kernelParams = [
     "nmi_watchdog=0"
-    "resume_offset=533760"
+    # 值为最近一次探测实测 (探测失败时的回退, 与运行时 hibernate-now 动态探测
+    # 同源)。swapfile 重建/balance 移动后此值会过期 —— build.sh 构建期注入
+    # 保证系统侧始终新鲜, 仓库回退值需在重建 swapfile 后手工同步一次。
+    "resume_offset=34743552"
   ];
   boot.blacklistedKernelModules = [ "iTCO_wdt" "iTCO_vendor_support" "sp5100_tco" ];
 
