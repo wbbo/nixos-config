@@ -230,12 +230,17 @@ in {
 
     # ============================================================
     # 显示设置按钮 —— 分辨率/缩放 合并菜单 (res-menu: 两级 fuzzel)
+    # 动作绑定必须是 [widget.X.actions] 表 (v5 gesture bindings);
+    # 顶层 left = ... 不在 custom_button 的 Options 字段定义中, 被静默
+    # 丢弃 —— 曾因此按钮点击无任何响应 (实测踩坑)。
     # ============================================================
     [widget.display]
     type    = "custom_button"
     glyph   = "aspect-ratio"
     tooltip = "显示设置"
-    left    = "exec res-menu"   # 新版: command 已改为 left gesture binding
+
+    [widget.display.actions]
+    left = "exec res-menu"
 
     # ============================================================
     # 网络 widget —— 只显示图标 (网卡名称在悬浮提示中)
