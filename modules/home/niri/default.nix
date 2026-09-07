@@ -1,5 +1,7 @@
 # 部署 Niri 配置文件到 ~/.config/niri/
 # 同时提供一个 polkit-gnome 认证代理 wrapper,供 Niri 启动时拉起(图形授权对话框)。
+# xwayland-satellite: X11 兼容层 (Steam/老应用), niri 26.04+ 检测到它在 PATH
+# 即按需自动 spawn (on-demand, 无 X11 客户端时零资源); 缺它则 X11 应用无法运行。
 { pkgs, lib, ... }:
 let
   polkit-gnome-agent = pkgs.writeShellScriptBin "polkit-gnome-authentication-agent-1" ''
@@ -77,7 +79,7 @@ let
   };
 in
 {
-  home.packages = [ polkit-gnome-agent niri-apply-resolution eye-care ];
+  home.packages = [ polkit-gnome-agent niri-apply-resolution eye-care pkgs.xwayland-satellite ];
 
   # force = true: 接管首启自动生成的官方默认 config.kdl
   # (全新安装首启 niri 会生成默认模板, 非 HM 链接; 无 force 时 HM clobber
