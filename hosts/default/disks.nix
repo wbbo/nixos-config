@@ -33,6 +33,14 @@
                   mountpoint = "/";
                   mountOptions = [ "compress=zstd:3" "noatime" ];
                 };
+                "@root/.snapshots" = {
+                  # snapper root config 的快照存储 (系统内路径 /.snapshots)。
+                  # 必须是子卷而非普通目录: ① 子卷不进 @root 快照, 防快照把
+                  # 快照收进自身递归膨胀; ② snapper rollback 的子卷交换语义
+                  # 依赖它。不单独挂载 (mountpoint=null, 生活在 @root 内部
+                  # 路径)。存量机器 (装机时无此子卷) 由 snapper.nix 的
+                  # root-snapshots-dirs activation 幂等补建。
+                };
                 "@nix" = {
                   mountpoint = "/nix";
                   mountOptions = [ "compress=zstd:3" "noatime" ];

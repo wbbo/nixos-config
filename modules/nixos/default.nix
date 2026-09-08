@@ -17,6 +17,7 @@
     ./services.nix
     ./greetd.nix
     ./snapper.nix
+    ./grub-btrfs.nix
     ./desktop.nix
     ./mihomo.nix
     ./packages.nix
