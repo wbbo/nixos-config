@@ -26,6 +26,7 @@
       ".cache/uv"
       "code"                   # 源代码仓库 (含本配置, snapper 保护)
       "apps"                   # 应用/工具目录 (ventory 等, snapper 保护)
+      "screenshot"             # niri 截图目录 (config.kdl screenshot-path; 不持久化重装即丢)
       # 脚本安装工具 (claude/codex/cc-switch): 二进制 + 版本目录 + codex 登录态。
       # 重装(@root 重建)后保留, 补装用户服务"缺失才下载"不再触发, 消除下载依赖;
       # .claude 配置目录在上面已持久化。

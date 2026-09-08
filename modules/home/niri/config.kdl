@@ -42,11 +42,18 @@ cursor {
     xcursor-size 24
 }
 
-// ================ 输出默认分辨率/缩放 (Virtual-1 = 当前虚拟显示器) ================
+// ================ 输出默认分辨率/缩放 (双环境自动适配) ================
+// niri 按连接器名精确匹配 output 块, 未连接的块静默保留 (等待热插拔, 无副作用),
+// 故同时声明 VM (Virtual-1) 与实体机内屏 (eDP-1) 两个默认块, 谁在场谁生效。
 // 运行时用 `niri-res <mode>` / `niri-res scale <scale>` 修改并持久化
 // (state 写入 ~/.local/state/niri-resolution|niri-scale,
 //  由 spawn-at-startup 的 niri-apply-resolution 在下次启动时应用覆盖默认)。
 output "Virtual-1" {
+    mode "1920x1080"
+    scale 1.0
+}
+
+output "eDP-1" {
     mode "1920x1080"
     scale 1.0
 }
@@ -60,6 +67,8 @@ input {
     }
     touchpad {
         tap
+        // 双指轻点=右键、三指轻点=中键 —— 显式固化 libinput 默认 (LRM), 防上游默认变更
+        tap-button-map "left-right-middle"
         natural-scroll
         click-method "clickfinger"
         accel-profile "adaptive"
@@ -171,9 +180,10 @@ window-rule {
     default-window-height { fixed 920; }
 }
 
-// Noctalia 面板/通知/dock/OSD 图层模糊
+// Noctalia 面板/通知/dock/OSD/桌面组件图层背景效果 (实测 namespace 前缀:
+// bar-default / notification / dock / panel / attached-panel / osd / desktop-widget-*)
 layer-rule {
-    match namespace="^noctalia-(bar-[^\"]+|notification|dock|panel|attached-panel|osd)$"
+    match namespace="^noctalia-(bar-[^\"]+|notification|dock|panel|attached-panel|osd|desktop-widget-[^\"]+)$"
     background-effect {
         xray false
     }
@@ -195,8 +205,9 @@ layer-rule {
 }
 
 debug { honor-xdg-activation-with-invalid-serial; }
+// Firefox 固定到 workspace c 并最大化 (native app-id=firefox, flatpak=org.mozilla.firefox)
 window-rule {
-    match title="Firefox"
+    match app-id=r#"^(firefox|org\.mozilla\.firefox)$"#
     open-on-workspace "c"
     open-maximized true
 }
