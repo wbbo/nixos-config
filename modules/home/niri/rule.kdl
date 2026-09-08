@@ -10,9 +10,9 @@ window-rule {
 }
 
 // ===== 浮动窗口(弹窗/对话框/工具) =====
-// 截图工具
+// 截图工具 (satty 的 app-id 是 com.gabm.satty, 前缀匹配兼顾未来 id 变化)
 window-rule {
-    match app-id="^(satty|flameshot|copyq)$"
+    match app-id="^(satty|com[.]gabm[.]satty|flameshot|copyq)$"
     open-floating true
     opacity 1.0
 }

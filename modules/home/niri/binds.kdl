@@ -133,14 +133,10 @@ binds {
     Mod+MouseBack    { focus-window-down; }
 
     // -------- 截图 --------
-    // 本机为 VMware 虚拟机: 按 PrtSc 到客户机变成 Pause 键 (真机则原样 Print),
-    // 两键同绑兼容两种环境; Noctalia 内置截图监听 Print, VM 下同样收不到。
-    // 选区: slurp 框选 → satty 标注 (标注界面内自行保存/复制到剪贴板);
-    // 全屏: 无需标注, grim 直落 wl-copy。
-    Print      { spawn "sh" "-c" "grim -g \"$(slurp)\" - | satty -f -"; }
-    Pause      { spawn "sh" "-c" "grim -g \"$(slurp)\" - | satty -f -"; }
-    Mod+Print  { spawn "sh" "-c" "grim - | wl-copy"; }
-    Mod+Pause  { spawn "sh" "-c" "grim - | wl-copy"; }
+    // 区域: Mod+Shift+S → slurp 框选 → satty 标注 (界面内自行保存/复制)
+    // 全屏: Mod+Ctrl+Shift+S → grim 全屏 → satty 标注 (全屏也可能需要标注)
+    Mod+Shift+S      { spawn "sh" "-c" "grim -g \"$(slurp)\" - | satty -f -"; }
+    Mod+Ctrl+Shift+S { spawn "sh" "-c" "grim - | satty -f -"; }
 
     // -------- 系统 --------
     Mod+Q          { close-window; }

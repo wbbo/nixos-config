@@ -1,0 +1,10 @@
+# satty 最小配置 —— 仅修中文标注渲染空白 (上游 Satty-org/Satty#617)
+#
+# 根因: 本机 Noto CJK 全部是可变字体 TTC (NotoSansCJK-VF.otf.ttc),
+# fontconfig 返回的 face index 高 16 位编码了 named-instance, satty 把
+# 整值当 TTC face index 用 → 字形加载失败 → 中文上屏后渲染空白。
+# 指定静态 TTF 的 Maple Mono NF CN (含中文, 与 noctalia 同款) 规避。
+# 除此之外 satty 全部使用默认配置。
+[font]
+family = "Maple Mono NF CN"
+style = "Regular"
