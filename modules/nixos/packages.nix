@@ -46,6 +46,7 @@
     wl-clipboard
     grim
     slurp
+    satty                     # 截图标注 (noctalia 内置截图的标注后端)
 
     ### 美化 / 状态
     starship

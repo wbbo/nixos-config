@@ -22,13 +22,14 @@ HOST_DIR="$(host_dir)"
 # git 安全检查 (Live CD / 属主不一致场景; 与 install.sh 原逻辑一致)
 git config --global --add safe.directory "$SCRIPT_DIR" 2>/dev/null || true
 # index 属主修复仅普通用户需要: root 对任何属主都有全权, 若 root 把 index
-# chown 成 root, 普通用户下次进来 chown 不动, 曾经的 rm 兜底会删掉 index ——
-# index 一丢 git 全库变 untracked, flake 求值树为空, 构建必炸。故 root 跳过,
-# 普通用户先 own 再借 sudo (build.sh 已 sudo -v 预热), rm 只留最后兜底。
+# chown 成 root, 普通用户下次进来 chown 不动 —— rm 只留最后兜底, 且删完
+# 必须立刻从 HEAD 重建 (git reset): index 一丢 git 全库变 untracked,
+# flake 求值树为空, 构建必炸; 无重建的话用户 git status 满屏 D, 误以为
+# 文件被删。普通用户先 own 再借 sudo (build.sh 已 sudo -v 预热)。
 if [ "$(id -u)" != 0 ] && [ -f .git/index ] && [ "$(stat -c %u .git/index 2>/dev/null)" != "$(id -u)" ]; then
   chown "$(id -u):$(id -g)" .git/index 2>/dev/null \
     || sudo chown "$(id -u):$(id -g)" .git/index 2>/dev/null \
-    || rm -f .git/index
+    || { rm -f .git/index && git reset -q; }
 fi
 
 # ---- 1. hostPlatform: nix 内建 currentSystem (标准平台名, 免 uname 映射) ----
