@@ -111,12 +111,23 @@ let
       # root= 默认 ro (default_rw=false); 正常启动 (root=fstab) 的 rw 来自 fstab
       # / 条目无 ro, 快照条目没有这条兜底 —— 不加 rw 则 stage2 根只读, activation
       # 写 /var 失败。NixOS 对 root=fstab 也不自动加 rw (initrd.nix 仅 gpt-auto 加)。
+      # ★ systemd.mount-extra 补挂 @root 的嵌套子卷挂载点 (/tmp、/var/tmp):
+      #   @root 的 tmp/var/tmp 是嵌套子卷 (subvolid 264/265, disko/装机时即有),
+      #   父树里是挂载点桩。正常引导时桩可直接写; 但快照树里的桩是 btrfs
+      #   stub (写保护, mkdir 报 EPERM —— 实测快照引导 tmpfiles 建 /tmp/.X11-unix
+      #   失败, 连锁 dbus-broker/logind/nscd 等服务大量 failed)。cmdline 显式
+      #   挂载这两子卷到 /sysroot (mount-extra 在 initrd 自动 prefix /sysroot,
+      #   需 x-initrd.mount 才过 fstab-generator 的 mount_in_initrd 过滤; 子卷
+      #   是活卷, 快照引导复用当前系统的 /tmp, 语义合理)。
       # 快照为只读子卷; 若需在快照内写入 (nixos-rebuild 修复), 先
       # `btrfs property set /.snapshots/N/snapshot ro false`。
       NEW="$GRUB_DIR/grub-btrfs.cfg.new"
       mkdir -p "$GRUB_DIR"
       : > "$NEW"
       SKIPPED=0
+      # 快照条目注入的嵌套子卷挂载 (见上方 ★ 注释): mount-extra 条目,
+      # 值内含 ':'/',' 无空格, GRUB cmdline 单 token 安全。
+      MOUNT_EXTRAS="systemd.mount-extra=/dev/disk/by-label/nixos:/tmp:btrfs:subvol=@root/tmp,x-initrd.mount systemd.mount-extra=/dev/disk/by-label/nixos:/var/tmp:btrfs:subvol=@root/var/tmp,x-initrd.mount"
       for snap in "''${SNAPS[@]}"; do
         num=$(echo "$snap" | cut -d/ -f2)
         # userdata nixos-init: <userdata><key>nixos-init</key><value>...</value></userdata>
@@ -143,7 +154,7 @@ let
             insmod all_video
             set gfxpayload=keep
             search --no-floppy --label ESP --set=root
-            linux /kernels/$(basename "''${KER[$ver]}") ${kernelParamsStr} root=/dev/disk/by-label/nixos rootflags=rw,subvol=@root/$snap init=$init_closure/init
+            linux /kernels/$(basename "''${KER[$ver]}") ${kernelParamsStr} $MOUNT_EXTRAS root=/dev/disk/by-label/nixos rootflags=rw,subvol=@root/$snap init=$init_closure/init
             initrd /kernels/$(basename "''${INIT[$ver]}")
         }
 GRUB
