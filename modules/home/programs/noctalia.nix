@@ -34,7 +34,8 @@ in {
     pkgs.socat
     # 动态壁纸播放中切静态壁纸的桥接: mpvpaper 播放时主壁纸层被撤下 (插件
     # 设计), 单纯 wallpaper-set 视觉无效。本钩子在检测到视频在播时先
-    # clear-all 再把所选静态图设回去 = "切静态壁纸即退出动态壁纸"。
+    # clear-all、等插件异步收尾完成后再把所选静态图 set 回去 = "切静态壁纸
+    # 即退出动态壁纸"(clear-all 的异步竞态与 fix 细节见脚本内 ★ 注释)。
     # 防递归/防误杀: 插件播放与切换时会把末帧图 set 回主壁纸 (取色用),
     # 路径全部落在 ~/.cache/noctalia/mpvpaper/ 下 (两种命名: <connector>_static.jpg
     # 与 <路径转写>.jpg, 后者不以 _static 结尾) —— 按目录前缀统一放行,
@@ -45,16 +46,34 @@ in {
     # -f 匹配 cmdline 只命中播放器本体 (mpv 子进程 cmdline 不含 bin/mpvpaper)。
     (pkgs.writeShellApplication {
       name = "wallpaper-video-guard";
-      runtimeInputs = [ pkgs.procps ];
+      runtimeInputs = [ pkgs.procps pkgs.coreutils ];
       text = ''
         p="''${NOCTALIA_WALLPAPER_PATH,,}"
         case "$p" in
           */noctalia/mpvpaper/*) exit 0 ;;
           *.mp4|*.webm|*.mkv|*.mov|*.gif|*.avi|*.m4v) exit 0 ;;
         esac
+        # 不在播 → 主壁纸层未被插件撤下, applied 直接显示, 无需干预
         pgrep -f "bin/mpvpaper" >/dev/null 2>&1 || exit 0
+        # ★ 竞态修复: clear-all 是异步的 (杀进程 → ffmpeg 抽帧回填 → 恢复
+        #   主壁纸层), 且视频播放期间主壁纸层被插件撤下 (managed by external
+        #   source) —— 此刻的 wallpaper-set 只写 state、创建实例被屏蔽, 屏幕
+        #   不变 (实测: applied 无 creating 日志)。回填晚到再把壁纸换成视频帧,
+        #   用户看到"切静态失败, 动态变静态"。故: 先 clear-all, 等进程退出 +
+        #   回填/主层恢复落定, 再无条件 set 所选图 —— 此时主层已恢复, 才真正
+        #   显示。set 触发的 wallpaper_changed 重入: 视频已死 → 上方直接 exit,
+        #   无循环。
         noctalia msg plugin noctalia/mpvpaper:service all clear-all
-        noctalia msg wallpaper-set "''${NOCTALIA_WALLPAPER_PATH}"
+        # 等 mpvpaper 进程退出 (上限 5s)
+        i=0
+        while pgrep -f "bin/mpvpaper" >/dev/null 2>&1 && [ "$i" -lt 50 ]; do
+          sleep 0.1
+          i=$((i + 1))
+        done
+        # 插件异步收尾缓冲: 抽帧 (ffmpeg) + 回填 setWallpaper + 主层恢复
+        sleep 1.5
+        noctalia msg wallpaper-set "$NOCTALIA_WALLPAPER_PATH"
+        exit 0
       '';
     })
     (pkgs.writeShellApplication {
