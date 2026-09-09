@@ -3,6 +3,12 @@
 # 补装走用户级 systemd 服务 (同 claude.nix): linger 常驻 user manager 开机即异步拉起, 不阻塞启动。
 # S3 云同步凭据走 sops (secrets.nix 声明), 安装段之后幂等重配
 # (同一服务内串行执行, 保证二进制就绪后才配置)。
+#
+# proxy 守护自启 (cc-switch-daemon): 开机即拉起 supervisor daemon, daemon 启动时
+# 按 db 里 proxy_config 的持久化开关 (proxy enabled / 路由接管) 自动 spawn 对应
+# worker —— Claude Code 开箱即有 127.0.0.1:15721 本地代理, 无需先手动跑一次
+# cc-switch。生命周期归 systemd (daemon start 前台模式, 上游明示适配 systemd);
+# 崩溃自动 Restart=on-failure, 注销不退出 (linger user manager 常驻)。
 { pkgs, ... }:
 {
   systemd.user.services.cc-switch-install = {
@@ -60,6 +66,66 @@
             --enable \
             || echo "警告: cc-switch S3 配置失败"
         fi
+
+        # 二进制就绪 → 拉起 proxy daemon (若 ConditionPathExists 曾挡下自启)。
+        # 失败不阻断本单元 (daemon 自身 Restart=on-failure 兜底)。
+        # ★ --no-block 必需: 同步 start 会与 daemon 的 After=本服务构成死锁
+        # (daemon job 等 install 完成, install 卡在等 daemon job)。
+        if [ -x "$CC_SWITCH" ]; then
+          systemctl --user start cc-switch-daemon.service --no-block || true
+        fi
+      '';
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # proxy supervisor daemon 开机自启 (见文件头注释)。
+  # 时序: After cc-switch-install (二进制就绪); 二进制缺失 (install 下载失败/
+  # 未跑) 时 ConditionPathExists 挡下, 单元静默跳过不刷失败 —— 由 install
+  # 服务成功尾部显式 start 本服务补拉起 (见 install ExecStart 末段)。
+  systemd.user.services.cc-switch-daemon = {
+    Unit = {
+      Description = "cc-switch proxy supervisor daemon (auto-start proxy per persisted config)";
+      After = [ "cc-switch-install.service" "home-wbb-.cc\\x2dswitch.mount" ];
+      ConditionPathExists = "%h/.local/bin/cc-switch";
+    };
+    Service = {
+      Type = "simple";
+      # 旧 daemon 占用 socket/pidfile 时新实例起不来 (rebuild/重启服务场景),
+      # ExecStartPre 先停旧的 (stop 优雅收 worker; 无旧实例时非零退出, 已容错)。
+      # NOTE: 停旧 daemon 会让本地代理中断 ~1s (新实例随即接管)。
+      ExecStartPre = pkgs.writeShellScript "cc-switch-daemon-stop-old" ''
+        "$HOME/.local/bin/cc-switch" daemon stop || true
+      '';
+      # daemon 前台模式: 不 detach, systemd 直接持有主进程 (上游推荐跑 systemd)。
+      # 崩溃自动拉起 (on-failure); 用户主动 stop 不复活; 退 1/2/3 (如 socket
+      # 仍被占/参数错) 不循环 —— 属需人工排查的状态。
+      Restart = "on-failure";
+      RestartSec = "5s";
+      RestartPreventExitStatus = [ "1" "2" "3" ];
+      ExecStart = "%h/.local/bin/cc-switch daemon start";
+      # ★ 每次启动显式开启 proxy: daemon 的语义是"优雅关闭 = 放弃接管"
+      # (清 takeover 状态并恢复直连配置), 单靠 db 持久状态在 daemon 被
+      # stop/start (HM 激活重启、手动重启) 后不会自动恢复 worker。
+      # enable 是持久开关 (写 db), worker 由 daemon 按 db 随即拉起。
+      # 逐 app 开启 (claude 15721 / codex 15722 / gemini 15723)。
+      # socket 未就绪时重试; 彻底失败不阻断 (daemon 存活, 手动可补)。
+      ExecStartPost = pkgs.writeShellScript "cc-switch-daemon-enable-proxy" ''
+        for app in claude codex gemini; do
+          err=""
+          ok=""
+          for i in 1 2 3 4 5; do
+            if err=$("$HOME/.local/bin/cc-switch" proxy enable -a "$app" 2>&1); then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          # 失败只汇总一行 (如 gemini 未配 provider 的 "no active provider"),
+          # 重试过程的重复报错不刷 journal; 不阻断后续 app / 服务。
+          [ -n "$ok" ] || echo "警告: cc-switch proxy enable -a $app 失败: $err"
+        done
+        exit 0
       '';
     };
     Install.WantedBy = [ "default.target" ];
