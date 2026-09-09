@@ -18,10 +18,9 @@
       device = "nodev";          # 双盘 UEFI: 只写 ESP, 不碰 MBR
       useOSProber = true;        # 全盘探测 Windows (跨盘跨 ESP)
       default = "saved";         # 记住上次选择的系统 (grubenv 记录, 不默认回 NixOS)
-      # 内核复制到 ESP 的 /boot/kernels/: grub-btrfs 快照生成器按
-      # /boot/kernels/<hash>-linux-<ver>-bzImage 配对内核 (见 grub-btrfs.nix),
-      # 默认 false 时该目录不存在, 生成器枚举不到内核 → 快照菜单为空。
-      copyKernels = true;
+      # copyKernels 不再开启: 它仅为 grub-btrfs 快照菜单服务 (快照引导链
+      # 2026-09 移除, 回滚走 generation)。默认 false 时 GRUB 直接从
+      # /nix/store 读内核 (GRUB 内建 btrfs 驱动, 本机已验证路径)。
     };
     grub2-theme = {
       enable = true;
