@@ -6,6 +6,10 @@
 # 补装走用户级 systemd 服务 (同 claude.nix): linger 常驻 user manager 开机即异步拉起, 不阻塞启动。
 { pkgs, ... }:
 {
+  # codex 沙箱依赖 bubblewrap (PATH 缺失时告警并退回捆绑版); 用户级安装,
+  # 经 home-manager 进桌面会话 PATH (codex 运行环境即登录会话)
+  home.packages = [ pkgs.bubblewrap ];
+
   systemd.user.services.codex-install = {
     Unit.Description = "补装 codex CLI (官方 install.sh, 缺失才下载; 已装秒退)";
     Service = {
