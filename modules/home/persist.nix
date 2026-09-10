@@ -44,6 +44,13 @@
       ".local/share/fcitx5/rime"
       # pigma (TUI 网易云) 配置与登录态
       ".config/pigma"
+      # Flatpak 应用数据 (系统级装 /var/lib/flatpak 跨 rebuild 天然保留, 但
+      # ~/.var/app/<app> 在 @root 属家目录需显式持久化):
+      # - com.usebottles.bottles: Bottles wineprefix + 下载的 runner/组件
+      #   (wineprefix 内含已装 Windows 应用, 无法重建, 必须持久化)
+      # - com.tencent.WeChat: 微信聊天记录/登录态 (~300M)
+      ".var/app/com.usebottles.bottles"
+      ".var/app/com.tencent.WeChat"
     ];
   };
 }
