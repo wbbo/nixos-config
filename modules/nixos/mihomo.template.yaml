@@ -1,7 +1,14 @@
 # tun.route-exclude-address: 网络层排除(目标地址)不经 TUN 接管 —— 内网/直连段硬直连,
 # 不依赖 RULE-SET 加载; 入站到这些网段的流量同样直通 (修复 docker 端口外部访问黑洞)。
 # 分发接收者按自身内网段调整: 上游代理网段 / 本机所在网段 / 私有网段
-tun: {auto-redirect: true, auto-detect-interface: true, auto-route: true, device: "Mihomo", dns-hijack: ["any:53"], mtu: 1500, route-exclude-address: ["10.65.4.0/23", "10.65.64.0/20", "192.168.0.0/16", "172.16.0.0/12", "127.0.0.0/8"], stack: "mixed", strict-route: false, enable: true}
+# auto-redirect 必须关闭: 该模式在 netfilter 层把 TCP 重定向到本地随机端口
+# (0.0.0.0:<随机>, 本机流量经 lo 回环保留), 转发流量 (virbr0/docker0) 也会被
+# prerouting 链重定向, 但随后在 NixOS 防火墙 INPUT 链被静默丢弃 ——
+# 随机端口不在 allowedTCPPorts, 且 docker0/virbr0 不在 trustedInterfaces,
+# 表现为 VM/Docker 有 DNS (fake-ip) 与 ICMP 但一切 TCP 超时。关闭后 TCP 回归
+# TUN, 由 mixed 栈接管: TCP 走 system 栈 (回写内核本地 listener), UDP 走 gvisor;
+# 该路径所需的 rp_filter loose / trustedInterfaces=[Mihomo] 配套已在 mihomo.nix。
+tun: {auto-redirect: false, auto-detect-interface: true, auto-route: true, device: "Mihomo", dns-hijack: ["any:53"], mtu: 1500, route-exclude-address: ["10.65.4.0/23", "10.65.64.0/20", "192.168.0.0/16", "172.16.0.0/12", "127.0.0.0/8"], stack: "mixed", strict-route: false, enable: true}
 proxies:
 # 订阅: provider1/provider2/... 由 activationScripts 按订阅 URL 列表动态生成
 proxy-providers:
