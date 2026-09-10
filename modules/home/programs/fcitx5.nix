@@ -32,6 +32,13 @@ in
   # - __include 加载雾凇默认方案(词库/双拼/schema/标点/Lua 脚本)
   # - 默认 schema 为 rime_ice (雾凇拼音全拼)
   # - switcher 呼出热键: Ctrl+` 与 VSCode 终端面板冲突, 改用 Ctrl+Alt+Shift+F4
+  # - 候选翻页键: 雾凇默认的 - / = 保留, 另追加 , / . (两套并存)。
+  #   用 @after 索引插入而非直接写 bindings: rime 对 key_binder/bindings 这类
+  #   按键表是整体替换式 patch (实测 librime 1.16.1: 连 "/+" 追加语法也是整体
+  #   覆盖), 直接赋值会顶掉雾凇其余键位 (Tab/Alt 移动拼音光标、Ctrl+Shift+3/4
+  #   切换标点/简繁、小键盘映射)。@after 5 / @after 6 把两条插在键位表第 5、6
+  #   条 (minus/equal) 之后; 值必须是单个对象 (数组会被当成一个元素嵌套进去)。
+  #   升级 rime-ice 后若键位表顺序变化, 索引需复核。
   xdg.dataFile."fcitx5/rime/default.custom.yaml".text = builtins.toJSON {
     patch = {
       __include = "rime_ice_suggestion:/";
@@ -40,6 +47,17 @@ in
       }];
       menu.page_size = 9;
       switcher.hotkeys = [ "Control+Alt+Shift+F4" ];
+      # has_menu: 候选菜单展开时始终翻页, 不输出标点 (雾凇注释里的写法)
+      "key_binder/bindings/@after 5" = {
+        when = "has_menu";
+        accept = "comma";
+        send = "Page_Up";
+      };
+      "key_binder/bindings/@after 6" = {
+        when = "has_menu";
+        accept = "period";
+        send = "Page_Down";
+      };
     };
   };
 
