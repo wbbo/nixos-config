@@ -140,7 +140,10 @@ in {
     [theme.templates.user.nyxmellow_highlight]
     input_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/templates/highlight.svg"
     output_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/highlight.svg"
-    post_hook = "systemctl --user restart app-org.fcitx.Fcitx5@autostart.service 2>/dev/null || { pkill -f 'bin/fcitx5' 2>/dev/null; sleep 1; fcitx5 -d >/dev/null 2>&1 & }"
+    # fcitx5 由 systemd 用户服务管理 (fcitx5.nix): 皮肤模板渲染后重启该服务生效。
+    # --no-block: 不阻塞 Noctalia 渲染线程 (fcitx5 重启约 3-5 秒, 阻塞会卡 UI)。
+    # 不要用 fcitx5 -d 兜底 —— 会创建绕过 systemd 的野实例 (单实例锁冲突源)。
+    post_hook = "systemctl --user restart --no-block fcitx5.service"
     # ============================================================
     # 壁纸
     # ============================================================

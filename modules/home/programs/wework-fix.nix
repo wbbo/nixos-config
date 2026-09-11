@@ -1,48 +1,125 @@
-# 企业微信 (Bottles) ARGB 子窗修复守护
-# 根因: 企业微信的 CEF/XWeb 把 GPU 合成内容画在一个 32 位 ARGB 子窗口
-# (比父窗大), 在 NVIDIA + xwayland-satellite 下该子窗内容不填充 (未初始化
-# GPU buffer), 盖住下层正常 GDI 绘制的 UI → 整窗黑/黑块。unmap 子窗后
-# 下层 UI 露出即正常。satellite 0.8.2 无开关, 上游 issue #225 跟踪中。
-# 本服务轮询: wxwork.exe 存在时, 找 mapped 且尺寸超过顶层窗的无名子窗,
-# xdotool windowunmap 之。误伤面小 (仅企业微信的无名大子窗)。
+# 企业微信 (Bottles) ARGB 子窗修复守护 (轮询版)
+# 根因: 企业微信的 CEF/XWeb 把 GPU 合成内容画在一个 32 位 ARGB 子窗口 (Depth 32,
+# 无名), 在 NVIDIA + xwayland-satellite 下该子窗内容不填充 (未初始化 GPU buffer),
+# 盖住下层正常 GDI 绘制的 UI → 整窗黑/黑块。satellite 缓存首帧黑帧不重抓, 运行中
+# 新建窗口 (双击菜单/弹框) 因此持续黑屏。上游 issue #502。
+#
+# 工作方式: 2 秒周期扫描窗口树, unmap 故障 ARGB 窗与 explorer 托盘横条。
+# 为什么是轮询而非 X 事件: root 的 SubstructureNotify 只上报直接子窗, 故障 ARGB
+# 窗是孙窗 (事件收不到, 事件驱动曾形同虚设); 且 Xlib 连接在 satellite 重启
+# (守护最该工作的场景) 时抛异常杀死进程。轮询用外部命令 + 超时, X 抖动只损失
+# 一轮。进程门禁: 企业微信未运行时整个会话零扫描开销。
+# 注意: 不可杀 explorer.exe 进程 —— 它是 wine 会话的桌面进程, 杀掉会连带终止
+# 整个 wine 会话 (企业微信一起退出)。
 { pkgs, ... }: let
+  fixPy = pkgs.writeText "wework-fix.py" ''
+    import os
+    import re
+    import subprocess
+    import time
+
+    SCAN_INTERVAL = 2  # 秒; 实测用户对 3 秒旧版可接受, 2 秒余量更足
+
+    def sh(*args):
+        # timeout 兜底: X 卡死时不阻塞; errors=replace: 非 UTF-8 窗标题
+        # (Java/Motif/GBK) 不抛异常
+        try:
+            return subprocess.run(
+                args, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=5,
+            ).stdout
+        except (subprocess.TimeoutExpired, OSError):
+            return ""
+
+    def unmap(wid, tag):
+        try:
+            r = subprocess.run(["xdotool", "windowunmap", wid],
+                               capture_output=True, timeout=5)
+            status = "ok" if r.returncode == 0 else f"rc={r.returncode}"
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            status = f"fail {exc!r}"
+        print(f"unmap {tag} {wid} {status}", flush=True)
+
+    def wxwork_running():
+        # 进程门禁 (走 procfs, 无子进程开销): 企业微信未运行时跳过扫描
+        try:
+            for pid in os.listdir("/proc"):
+                if not pid.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{pid}/cmdline", "rb") as f:
+                        if b"WXWork.exe" in f.read():
+                            return True
+                except OSError:
+                    pass
+        except OSError:
+            pass
+        return False
+
+    def fix_wxwork_argb(tree):
+        # 故障合成窗判据: 无名 + 可见 + Depth 32 + 尺寸 > 10x10。
+        # 正常 UI 子窗均为 Depth 24 不受影响; 排除 1x1 消息窗 (Default IME 等
+        # 被 unmap 曾导致输入失效)。
+        for line in tree.splitlines():
+            if "has no name" not in line or "wxwork.exe" not in line:
+                continue
+            m = re.match(r"\s*(0x[0-9a-f]+)", line)
+            if not m:
+                continue
+            wid = m.group(1)
+            stats = sh("xwininfo", "-id", wid, "-stats")
+            ms = re.search(r"Map State:\s*(\w+)", stats)
+            w = re.search(r"Width:\s*(\d+)", stats)
+            h = re.search(r"Height:\s*(\d+)", stats)
+            d = re.search(r"Depth:\s*(\d+)", stats)
+            if not (ms and w and h and d):
+                continue
+            if ms.group(1) != "IsViewable" or d.group(1) != "32":
+                continue
+            if int(w.group(1)) > 10 and int(h.group(1)) > 10:
+                unmap(wid, "ARGB")
+
+    def fix_explorer_tray(tree):
+        # wine 托盘窗 (explorer.exe, 白色图标横条): unmap 隐藏。
+        # 几何从行尾锚定 (相对+绝对坐标对), 避免窗口标题含 "NxM+" 时误匹配;
+        # 尺寸过滤 > 4x4 保护 1x1 消息窗 (被 unmap 曾导致输入失效)。
+        for line in tree.splitlines():
+            if "explorer.exe" not in line:
+                continue
+            m = re.match(
+                r"\s*(0x[0-9a-f]+)\s.*?(\d+)x(\d+)\+\d+\+\d+\s+\+\d+\+\d+\s*$",
+                line,
+            )
+            if not m:
+                continue
+            wid, w, h = m.group(1), int(m.group(2)), int(m.group(3))
+            if w <= 4 or h <= 4:
+                continue
+            stats = sh("xwininfo", "-id", wid, "-stats")
+            ms = re.search(r"Map State:\s*(\w+)", stats)
+            if ms and ms.group(1) == "IsViewable":
+                unmap(wid, "tray")
+
+    while True:
+        try:
+            if wxwork_running():
+                tree = sh("xwininfo", "-root", "-tree")
+                if tree:
+                    fix_wxwork_argb(tree)
+                    fix_explorer_tray(tree)
+        except Exception as exc:  # 单轮失败不杀进程, 记录后继续
+            print(f"scan error: {exc!r}", flush=True)
+        time.sleep(SCAN_INTERVAL)
+  '';
   weworkFixScript = pkgs.writeShellApplication {
     name = "wework-fix-subwindow";
-    # 轮询脚本大量依赖 grep 无匹配继续运行, 关闭 -e/-o pipefail
-    bashOptions = [ "u" ];
-    runtimeInputs = with pkgs; [ xorg.xwininfo xdotool procps gnugrep gawk ];
+    runtimeInputs = [
+      pkgs.python3
+      pkgs.xorg.xwininfo
+      pkgs.xdotool
+    ];
     text = ''
-      export DISPLAY=''${DISPLAY:-:0}
-      while true; do
-        if pgrep -f 'WXWork[.]exe' >/dev/null 2>&1; then
-          tree=$(xwininfo -root -tree 2>/dev/null)
-          # 顶层窗 = wxwork.exe 具名窗中面积最大者 (避开 XWeb 的 1x1 占位窗)
-          geom=$(echo "$tree" | grep '"wxwork.exe"' | grep -v 'has no name' | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | awk -Fx '{split($2,a,"+"); if ($1*a[1]>mw*mh) {mw=$1; mh=a[1]}} END {print mw"x"mh}')
-          tw=$(echo "$geom" | cut -dx -f1)
-          th=$(echo "$geom" | cut -dx -f2)
-          if [ "''${tw:-0}" -gt 50 ]; then
-            # 无名、可见、宽或高超过顶层窗 → 视为故障 ARGB 合成子窗
-            for id in $(echo "$tree" | grep 'has no name' | grep 'wxwork.exe' | grep -oE '^\s*0x[0-9a-f]+'); do
-              id=''${id// /}
-              stats=$(xwininfo -id "$id" -stats 2>/dev/null)
-              [ "$(echo "$stats" | awk '/Map State/{print $3}')" = "IsViewable" ] || continue
-              w=$(echo "$stats" | awk '/Width/{print $2}')
-              h=$(echo "$stats" | awk '/Height/{print $2}')
-              if [ -n "$w" ] && { [ "$w" -ge "$tw" ] || [ "$h" -ge "$th" ]; }; then
-                xdotool windowunmap "$id" 2>/dev/null
-              fi
-            done
-          fi
-          # wine 托盘窗 (explorer.exe, 白色图标横条): unmap 隐藏。
-          # 注意不能杀 explorer.exe 进程 —— 它是 wine 会话的桌面进程,
-          # 杀掉会连带终止整个 wine 会话 (企业微信一起退出)。
-          for id in $(echo "$tree" | grep 'explorer.exe' | grep -oE '^\s*0x[0-9a-f]+'); do
-            tray_id=''${id// /}
-            xdotool windowunmap "$tray_id" 2>/dev/null
-          done
-        fi
-        sleep 3
-      done
+      exec python3 ${fixPy}
     '';
   };
 in {
@@ -53,6 +130,7 @@ in {
       PartOf = [ "graphical-session.target" ];
     };
     Service = {
+      Environment = [ "DISPLAY=:0" ];
       ExecStart = "${weworkFixScript}/bin/wework-fix-subwindow";
       Restart = "on-failure";
       RestartSec = 10;

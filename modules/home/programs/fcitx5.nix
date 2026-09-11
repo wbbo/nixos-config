@@ -168,6 +168,51 @@ in
   # → 触发 satellite 拉起 → 杀掉残留实例 (单实例锁会拒新实例造成重启循环)。
   # 用户级 autostart desktop 保留但改为空操作, 覆盖 fcitx5 包自带的系统级
   # autostart (否则登录时无等待的实例抢跑占坑)。
+  # XIM 健康守护: niri 的 X server (xwayland-satellite 承载) 重启后 (显示器断连/
+  # 手动操作/配置重载), fcitx5 的 X 连接断掉且**不会自动重连** —— 进程存活但
+  # root 上 _XIM_SERVERS 消失, 所有 XIM 客户端 (wine 等) 静默无法输入中文。
+  # 本守护每 5 秒检查: X socket 存在 + fcitx5 在跑 + _XIM_SERVERS 缺失 → 重启
+  # fcitx5.service 重新注册 (触发后冷却 30 秒)。注意 writeShellScript 不注入
+  # runtimeInputs 的 PATH, 脚本内命令必须绝对路径。
+  systemd.user.services.fcitx5-xim-guard = {
+    Unit = {
+      Description = "Restart fcitx5 when its XIM registration is lost (X server restart)";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStart = pkgs.writeShellScript "fcitx5-xim-guard" ''
+        delay=30
+        while true; do
+          # X 可用性判据 = xprop 成功执行。不能用 socket 存在判断 (socket 由
+          # niri 持有 listenfd 传给 satellite, satellite 死后 socket 仍在)。
+          # 属性名为 XIM_SERVERS (无下划线, xprop 实测)。
+          # XIM 丢失 → restart (指数退避, 上限 300s, 防永久失败时无限重启输入法);
+          # fcitx5 未跑 (退出 0 静默 / 手动 stop) → start。
+          out=$(${pkgs.coreutils}/bin/timeout 3 env DISPLAY=:0 ${pkgs.xorg.xprop}/bin/xprop -root 2>/dev/null) || out=""
+          if [ -n "$out" ]; then
+            if ! systemctl --user is-active --quiet fcitx5.service; then
+              systemctl --user start fcitx5.service
+            elif [[ "$out" != *XIM_SERVERS* ]]; then
+              echo "XIM registration lost, restarting fcitx5 (next cooldown ''${delay}s)"
+              systemctl --user restart fcitx5.service
+              sleep "$delay"
+              delay=$((delay * 2))
+              [ "$delay" -gt 300 ] && delay=300
+              continue
+            else
+              delay=30  # XIM 正常: 重置退避
+            fi
+          fi
+          sleep 5
+        done
+      '';
+      Restart = "on-failure";
+      RestartSec = 10;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
   systemd.user.services.fcitx5 = {
     Unit = {
       Description = "Fcitx5 input method";
@@ -184,10 +229,12 @@ in
         "QT_IM_MODULE=fcitx"
       ];
       ExecStartPre = pkgs.writeShellScript "fcitx5-wait-x" ''
-        # 僵死的 fcitx5 (XIM 死锁) 会忽略 SIGTERM, 先 TERM 后 KILL 兜底
-        ${pkgs.procps}/bin/pkill -x fcitx5 2>/dev/null || true
+        # 清理 unit 之外的野实例 (手动启动/历史漂留), 避免单实例锁冲突:
+        # nix wrapper 进程 comm 是 `.fcitx5-wrapped`, pgrep/pkill -x fcitx5
+        # 永不匹配 (曾致清理失效)。僵死的 fcitx5 忽略 SIGTERM, 先 TERM 后 KILL。
+        ${pkgs.procps}/bin/pkill -x '[.]fcitx5-wrapped' 2>/dev/null || true
         sleep 1
-        ${pkgs.procps}/bin/pkill -9 -x fcitx5 2>/dev/null || true
+        ${pkgs.procps}/bin/pkill -9 -x '[.]fcitx5-wrapped' 2>/dev/null || true
         for i in $(seq 1 30); do
           [ -S /tmp/.X11-unix/X0 ] && break
           sleep 1
@@ -196,7 +243,9 @@ in
         sleep 2
       '';
       ExecStart = "${fcitx5Pkgs}/bin/fcitx5 --disable notificationitem";
-      Restart = "on-failure";
+      # always: fcitx5 遇单实例锁冲突会以退出码 0 静默退出 (on-failure 不重试),
+      # ExecStartPre 清理野实例后该场景消失, always 兜底其余静默退出情形
+      Restart = "always";
       RestartSec = 3;
     };
     Install.WantedBy = [ "graphical-session.target" ];
@@ -204,11 +253,12 @@ in
 
   # 覆盖 dbus activation: 名字空缺瞬间 dbus-daemon 会按包自带的 service 文件
   # 拉起竞争实例, 抢占 org.fcitx.Fcitx5 导致 systemd 实例启动失败 (退出码 0
-  # 的静默竞争)。用户级同名文件优先, Exec 指向 true 使 activation 变为空操作。
+  # 的静默竞争)。用户级同名文件优先, Exec 指向 true 使 activation 变为空操作
+  # (必须用 coreutils 的绝对路径: NixOS 无 /bin/true, 否则 activation 报 exec 错误)
   xdg.dataFile."dbus-1/services/org.fcitx.Fcitx5.service".text = ''
     [D-BUS Service]
     Name=org.fcitx.Fcitx5
-    Exec=/bin/true
+    Exec=${pkgs.coreutils}/bin/true
   '';
 
   xdg.configFile."autostart/org.fcitx.Fcitx5.desktop" = {
