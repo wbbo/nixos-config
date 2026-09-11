@@ -159,14 +159,66 @@ in
   # ~/.config/autostart/org.fcitx.Fcitx5.desktop (优先级高于 /etc/profiles
   # 的同名文件), 在 Exec 注入 --disable notificationitem 禁用托盘。
   # 候选框左侧的中/英标识不受影响; 重新部署用 fcitx5 -rd。
+  #
+  # XIM 就绪等待: niri 25.08+ 的 X11 socket 由按需 spawn 的 xwayland-satellite
+  # 承载, fcitx5 启动早于首个 X client 时, 其 XIM 前端注册会静默失败
+  # (root 上无 _XIM_SERVERS → wine 等 XIM 客户端无法输入中文)。
+  # fcitx5 本体改由 systemd 用户服务常驻 (Restart 自动拉起, 替代 autostart;
+  # 中途死亡无人监管曾导致全系统无法输入中文), ExecStartPre: 等待 X socket
+  # → 触发 satellite 拉起 → 杀掉残留实例 (单实例锁会拒新实例造成重启循环)。
+  # 用户级 autostart desktop 保留但改为空操作, 覆盖 fcitx5 包自带的系统级
+  # autostart (否则登录时无等待的实例抢跑占坑)。
+  systemd.user.services.fcitx5 = {
+    Unit = {
+      Description = "Fcitx5 input method";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Service = {
+      # systemd 用户环境缺显示相关变量, fcitx5 连不上 Wayland/X 会静默退出
+      Environment = [
+        "WAYLAND_DISPLAY=wayland-1"
+        "DISPLAY=:0"
+        "XMODIFIERS=@im=fcitx"
+        "GTK_IM_MODULE=fcitx"
+        "QT_IM_MODULE=fcitx"
+      ];
+      ExecStartPre = pkgs.writeShellScript "fcitx5-wait-x" ''
+        # 僵死的 fcitx5 (XIM 死锁) 会忽略 SIGTERM, 先 TERM 后 KILL 兜底
+        ${pkgs.procps}/bin/pkill -x fcitx5 2>/dev/null || true
+        sleep 1
+        ${pkgs.procps}/bin/pkill -9 -x fcitx5 2>/dev/null || true
+        for i in $(seq 1 30); do
+          [ -S /tmp/.X11-unix/X0 ] && break
+          sleep 1
+        done
+        ${pkgs.xorg.xprop}/bin/xprop -root >/dev/null 2>&1 || true
+        sleep 2
+      '';
+      ExecStart = "${fcitx5Pkgs}/bin/fcitx5 --disable notificationitem";
+      Restart = "on-failure";
+      RestartSec = 3;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
+  # 覆盖 dbus activation: 名字空缺瞬间 dbus-daemon 会按包自带的 service 文件
+  # 拉起竞争实例, 抢占 org.fcitx.Fcitx5 导致 systemd 实例启动失败 (退出码 0
+  # 的静默竞争)。用户级同名文件优先, Exec 指向 true 使 activation 变为空操作。
+  xdg.dataFile."dbus-1/services/org.fcitx.Fcitx5.service".text = ''
+    [D-BUS Service]
+    Name=org.fcitx.Fcitx5
+    Exec=/bin/true
+  '';
+
   xdg.configFile."autostart/org.fcitx.Fcitx5.desktop" = {
     force = true;
     text = ''
       [Desktop Entry]
       Name=Fcitx 5
       GenericName=Input Method
-      Comment=Start Input Method
-      Exec=${fcitx5Pkgs}/bin/fcitx5 --disable notificationitem
+      Comment=Disabled: managed by systemd user service fcitx5
+      Exec=true
       Icon=fcitx
       Terminal=false
       Type=Application

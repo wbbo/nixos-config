@@ -164,6 +164,13 @@ window-rule {
     clip-to-geometry true
 }
 
+// wine (Bottles) 的托盘图标窗: explorer.exe 的浮动小横条, 内容无意义且碍眼,
+// 直接透明化 (托盘功能本身在 niri 下无处显示, 无损)
+window-rule {
+    match app-id="^explorer\\.exe$"
+    opacity 0.0
+}
+
 // 全局窗口模糊
 window-rule {
     background-effect {

@@ -29,6 +29,7 @@
     ./programs/satty.nix
     ./programs/scratchpad.nix
     ./programs/pigma.nix
+    ./programs/wework-fix.nix
     ./persist.nix
   ];
 
