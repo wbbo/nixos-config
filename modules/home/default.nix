@@ -11,6 +11,7 @@
     ./programs/git.nix
     ./programs/ssh.nix
     ./programs/firefox.nix
+    ./programs/thunderbird.nix
     ./programs/fcitx5.nix
     ./programs/noctalia.nix
     ./programs/neovim.nix
