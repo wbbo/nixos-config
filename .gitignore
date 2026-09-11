@@ -22,7 +22,6 @@
 # 接收者: 用 secrets/secrets.template.yaml 重建 → 填真实值 → 用自己的 age 公钥重加密
 # 覆盖后 commit 到自己的 fork (勿向原模板仓库回推自己的密文)。
 .claude/
-doc/
 config.yaml
 /mihomo
 /NyxNiri
