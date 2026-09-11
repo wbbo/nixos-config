@@ -21,20 +21,22 @@
 
 1. 打开 [GitHub Tokens](https://github.com/settings/tokens)，两种类型二选一：
 
-   - **classic**：**Generate new token (classic)** → 勾选 `public_repo`（只读公开仓库，足够提升 API 限额），最省事
-   - **fine-grained**（可限定仓库范围与权限）：**Generate fine-grained token** → Repository access 选 *Public repositories (read-only)* → Permissions → Contents: **Read-only**
+   - **classic**：**Generate new token (classic)** → 勾选 `public_repo` + `read:org` + `gist`（nix 拉取之外，`gh` CLI 也吃同一凭据——只勾 `public_repo` 时 gh 表现为私有库 404 / org 403），最省事
+   - **fine-grained**（可限定仓库范围与权限）：**Generate fine-grained token** → Repository access 选 *Public repositories (read-only)* → Permissions → Contents: **Read-only**（要用 gh 访问私有库或做写操作时，需显式勾选对应仓库与权限）
 
 2. Note 填 `nixos`（随意）；Expiration 建议 `No expiration`（省心）或 90 天（到期后按下文「日常使用」轮换指引），两种类型逻辑一致
 3. 点 **Generate token**，**立即复制** token——关闭页面后不再显示
 
-token 用在两处（申请一份、填入 secrets 一次即可）：
+token 用在三处（申请一份、填入 secrets 一次即可）：
 
 | 场景 | 方式 | 说明 |
 |------|------|------|
 | **安装时（全新首装/重装，自动）** | 第 3 步填入 secrets 后，`install.sh` 自动解密 | 手动传 `GITHUB_TOKEN` 仅作备用（token 未填真值/换号试网络） |
 | **装好后（常驻）** | 同一份 secrets 的 `github-username` + `github-token` 字段 | systemd 生成 netrc 三条目，`nix flake update` 升级时认证（日常 rebuild 不依赖 token） |
 
-> **token 失效症状**：`nix flake update` 报 401/403（日常 rebuild 不受影响）。轮换：GitHub 生成新 token → 编辑 `secrets/secrets.yaml` 的 `github-token` 字段 → commit + rebuild。
+| **装好后（常驻 · gh CLI）** | 同一份 secrets 的 `github-username` + `github-token` 字段 | sops 模板（`secrets.nix` 的 `sops.templates."gh-hosts.yml"`）声明式渲染 `~/.config/gh/hosts.yml`，`gh` 全功能认证；重装自动恢复，无需 `gh auth login` |
+
+> **token 失效症状**：`nix flake update` 报 401/403，`gh` 命令一并 401（日常 rebuild 不受影响）。轮换：GitHub 生成新 token → 编辑 `secrets/secrets.yaml` 的 `github-token` 字段 → commit + rebuild。
 
 ---
 
@@ -205,7 +207,7 @@ sudo nix --extra-experimental-features 'nix-command flakes' \
 
 sops 会打开 vim：改 `main-user-password`（登录密码明文，系统自动派生哈希）或 `github-token` 等字段 → `:wq` 保存（自动加密）→ `./build.sh` 生效。
 
-> **GitHub token 失效**：症状是 `nix flake update` 报 401/403（日常 rebuild 不受影响）。换新 token（[GitHub tokens](https://github.com/settings/tokens)，勾 `public_repo`）→ 改 `github-token` 字段 → rebuild。
+> **GitHub token 失效**：症状是 `nix flake update` 报 401/403、`gh` 命令 401（日常 rebuild 不受影响）。换新 token（[GitHub tokens](https://github.com/settings/tokens)，勾 `public_repo` + `read:org` + `gist`）→ 改 `github-token` 字段 → rebuild（gh 随激活钩子一并恢复）。
 
 **出问题？一键回滚（NixOS 安全网）**
 

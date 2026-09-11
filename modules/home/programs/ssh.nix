@@ -14,6 +14,21 @@
   ...
 }:
 {
+  # ssh 客户端配置 (HM 管理, ~/.ssh/config 为 store 只读链接; 本机原先无此文件)。
+  # github.com 重写到 ssh.github.com:443 —— mihomo TUN (fake-ip) 下 22 端口
+  # 被拦 (实测 Connection closed by 198.18.0.5), 443 放行; 仓库既有 remote
+  # 已是 ssh://git@ssh.github.com:443/... 形式, 此重写补上 git@github.com:...
+  # 形式 (gh 的 git_protocol=ssh 生成的 clone URL、手敲的简写) 的连通性。
+  # 只影响 ssh 客户端; sshd/authorized_keys 等与本文件无关。
+  programs.ssh = {
+    enable = true;
+    matchBlocks."github.com" = {
+      hostname = "ssh.github.com";
+      port = 443;
+      user = "git";
+    };
+  };
+
   home.activation.ssh-identity = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     PRIV="$(${pkgs.coreutils}/bin/cat /run/secrets/ssh-id-ed25519 2>/dev/null || true)"
     PUB="$(${pkgs.coreutils}/bin/cat /run/secrets/ssh-id-ed25519-pub 2>/dev/null || true)"

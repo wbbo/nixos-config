@@ -87,6 +87,31 @@
         mode = "0400";
       };
     };
+
+    ### gh CLI 的 hosts.yml —— 声明式渲染 (sops.templates)
+    # content 是含 ${placeholder} 的模板: 进 store 的只有占位符字符串
+    # (<SOPS:sha256:PLACEHOLDER>), 真实 token 不落 /nix/store (全局可读)。
+    # 系统激活时由 sops-install-secrets 以 root 渲染, 输出为
+    # ~/.config/gh/hosts.yml 的符号链接 (指向 /run/secrets/rendered/)。
+    # 语义: 整个文件由声明式拥有 —— gh auth login/logout 等运行时改动会被
+    # 下次激活覆盖; 要加 GHE/多账号条目, 直接在本模板里加 (与手写钩子
+    # 只盖 github.com 块不同)。git_protocol=ssh 配合 ssh.nix 的 Host 重写
+    # (github.com → ssh.github.com:443, mihomo 下 22 端口不可达)。
+    # 不持久化: 渲染值与链接都在 /run (tmpfs), 明文 token 不落 /persist,
+    # 不会被 snapper 快照保留。
+    templates."gh-hosts.yml" = {
+      content = ''
+        github.com:
+            git_protocol: ssh
+            users:
+                ${config.sops.placeholder.github-username}:
+            user: ${config.sops.placeholder.github-username}
+            oauth_token: ${config.sops.placeholder.github-token}
+      '';
+      path = "${config.users.users.${config.mainUser}.home}/.config/gh/hosts.yml";
+      owner = config.mainUser;
+      mode = "0600";
+    };
   };
 
   # 从 github-username + github-token 生成三条目 netrc
