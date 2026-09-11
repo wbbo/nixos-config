@@ -44,6 +44,10 @@
       ".local/share/fcitx5/rime"
       # pigma (TUI 网易云) 配置与登录态
       ".config/pigma"
+      # Thunderbird: 账户配置/服务器设置/地址簿/本地邮件都在 profile 内,
+      # 不持久化则重装(@root 重建)后需重配全部邮箱账户。
+      # 注意: IMAP 账户的离线邮件缓存也在其中, 会随使用增长。
+      ".thunderbird"
       # Flatpak 应用数据 (系统级装 /var/lib/flatpak 跨 rebuild 天然保留, 但
       # ~/.var/app/<app> 在 @root 属家目录需显式持久化):
       # - com.usebottles.bottles: Bottles wineprefix + 下载的 runner/组件
