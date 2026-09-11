@@ -15,6 +15,9 @@
   # subversion: SVN 客户端 (svn, 公司仓库仍走 SVN)
   # git-filter-repo: 历史重写 (替代弃用 filter-branch, LFS 历史瘦身)
   # gh / glab: GitHub / GitLab CLI
+  # (gh 的认证不在本文件: ~/.config/gh/hosts.yml 由 modules/nixos/secrets.nix
+  #  的 sops.templates."gh-hosts.yml" 声明式渲染, 模板值不进 /nix/store;
+  #  glab 未做同样处理 —— GitLab 暂未使用)
   home.packages = with pkgs; [
     gitui
     subversion

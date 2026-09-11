@@ -175,9 +175,9 @@ host key 是解密 secrets 的凭据, 重装/换设备后 host key 变化会导�
 
 ### GitHub token 失效 (401) 排查与轮换
 
-**症状**: `nix flake update` (分支解析走 api.github.com) 报 HTTP error 401/403; 日常 rebuild 的 tarball 直链匿名下载不受影响。
+**症状**: `nix flake update` (分支解析走 api.github.com) 报 HTTP error 401/403; `gh` 也一并失效 (凭据同源, 见下)。日常 rebuild 的 tarball 直链匿名下载不受影响。
 
-**根因**: `nix.nix` 配置 `netrc-file = /run/secrets/github-netrc` (由 systemd `github-netrc` 服务从 `github-username`/`github-token` 生成**三条目**: api.github.com + github.com + codeload.github.com), nix 的分支解析请求携带该凭据, PAT 过期/被撤销后 401。tarball 直链不带凭据, 故 rebuild 无感。
+**根因**: `nix.nix` 配置 `netrc-file = /run/secrets/github-netrc` (由 systemd `github-netrc` 服务从 `github-username`/`github-token` 生成**三条目**: api.github.com + github.com + codeload.github.com), nix 的分支解析请求携带该凭据, PAT 过期/被撤销后 401。tarball 直链不带凭据, 故 rebuild 无感。同一 token 另经 sops 模板 (`modules/nixos/secrets.nix` 的 `sops.templates."gh-hosts.yml"`) 渲染成 `~/.config/gh/hosts.yml` 供 gh CLI 用 —— 轮换后 gh 随下次 rebuild 一并恢复, 无需 `gh auth login`。
 
 **诊断** (在目标主机):
 ```bash
@@ -190,7 +190,7 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 ```
 
 **轮换步骤**:
-1. GitHub 生成新 PAT: classic 勾选 `public_repo` (限速提升足够); 若要 push 仓库再加 `Contents: Read and write`。
+1. GitHub 生成新 PAT: classic 勾选 `public_repo` + `read:org` + `gist` —— 除 nix 拉取外 gh CLI 也吃同一凭据 (只勾 `public_repo` 时 gh 表现是 status 显示已登录但私有库 404 / org 403); fine-grained 需在 token 设置里显式勾 Repository access。
 2. 更新 `secrets/secrets.yaml` —— `sops set` 需 host key 派生密钥 (`SOPS_AGE_KEY_FILE`), value 必须是 **JSON 字符串** (外层带引号):
    ```bash
    cd ~/code/nixos-config
@@ -215,8 +215,8 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 
 | Secret 名 | 用途 | 引用位置 |
 |-----------|------|---------|
-| `github-username` | GitHub 用户名 (systemd 生成 netrc 用) | `modules/nixos/secrets.nix` |
-| `github-token` | GitHub PAT (systemd `github-netrc` 服务据此生成三条目 netrc) | `modules/nixos/secrets.nix` → `systemd.services.github-netrc` → `nix.nix` `netrc-file` |
+| `github-username` | GitHub 用户名 (systemd 生成 netrc 用; 另渲染进 gh 的 hosts.yml) | `modules/nixos/secrets.nix`; `sops.templates."gh-hosts.yml"` |
+| `github-token` | GitHub PAT (systemd `github-netrc` 服务据此生成三条目 netrc; 另作 gh CLI 凭据) | `modules/nixos/secrets.nix` → `systemd.services.github-netrc` → `nix.nix` `netrc-file`; `sops.templates."gh-hosts.yml"` |
 | `git-user-name` | git 提交署名 (激活钩子生成 `~/.config/git/identity`, `programs.git.includes` 引用) | `modules/home/programs/git.nix` → `home.activation.git-identity` |
 | `git-user-email` | git 提交邮箱 (同上; 建议 GitHub noreply 地址) | `modules/home/programs/git.nix` → `home.activation.git-identity` |
 | `ssh-id-ed25519` | SSH 用户私钥 (YAML 块标量多行; 激活钩子再生 `~/.ssh/id_ed25519`, 重装/换机一份 secrets 恢复全部身份; 权威源语义, 手动换密钥需更新此字段) | `modules/home/programs/ssh.nix` → `home.activation.ssh-identity` |
@@ -317,7 +317,7 @@ home-manager-restart) 每次 switch 跨实例 restart 触发重跑,
 
 **所有敏感信息已通过 sops-nix + age 加密管理 (见上方"秘密管理"章节)。** 以下信息不再以明文签入 git:
 
-- GitHub token → `secrets/secrets.yaml` → `github-username`/`github-token` → systemd 生成 `/run/secrets/github-netrc`(三条目)
+- GitHub token → `secrets/secrets.yaml` → `github-username`/`github-token` → systemd 生成 `/run/secrets/github-netrc`(三条目); 同一凭据经 sops 模板 (`secrets.nix` 的 `sops.templates."gh-hosts.yml"`) 渲染为 `~/.config/gh/hosts.yml`(gh CLI 认证; 实体文件在 `/run/secrets/rendered/` (tmpfs), 家目录侧是符号链接 —— 明文 token 不落 `/persist`, 不进 snapper 快照)
 - 用户密码(明文) → `secrets/secrets.yaml` → `main-user-password` → 解密到 `/run/secrets-for-users/main-user-password` (激活时派生 yescrypt 哈希注入 `/etc/shadow`)
 
 **换机器/密钥变化时:** 流程见上方「换主机或密钥泄露」与「host key 变化处理」。
