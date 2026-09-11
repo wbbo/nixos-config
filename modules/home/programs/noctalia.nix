@@ -49,20 +49,68 @@ in {
       runtimeInputs = [ pkgs.procps pkgs.coreutils ];
       text = ''
         p="''${NOCTALIA_WALLPAPER_PATH,,}"
+        F="$HOME/.local/state/noctalia/settings.toml"
+
+        # 开关静态轮播: settings.toml 对 config.toml 是按键覆盖 (实测), 只写
+        # enabled 一个键, interval/order/recursive 继承 config.toml (改
+        # noctalia.nix 即生效)。幂等且已同值则早退 —— 也防 config-reload
+        # 触发的事件重入成环。原子替换避免与 noctalia 自身写入交错。
+        set_automation() {
+          [ -f "$F" ] || return 0
+          local cur T
+          cur="$(awk '/^\[wallpaper\.automation\]/{f=1;next} /^\[/{f=0} f&&/^enabled/{print $3}' "$F" 2>/dev/null || true)"
+          # 注意必须用 if 而非 `[ ... ] && return 0`: 后者条件为假时整个 && 列表
+          # 返回非零, 在 writeShellApplication 的 set -e 下直接终止整个钩子
+          # (实测: 轮播开关失效, 钩子静默退出)
+          if [ "$cur" = "$1" ]; then
+            return 0
+          fi
+          T="$F.tmp.$$"
+          if awk -v want="$1" '
+                /^\[wallpaper\.automation\]/ { skip = 1; next }
+                /^\[/ { skip = 0 }
+                !skip { print }
+                END { printf "\n[wallpaper.automation]\nenabled = %s\n", want }
+              ' "$F" > "$T" 2>/dev/null; then
+            mv "$T" "$F" 2>/dev/null || rm -f "$T"
+          else
+            rm -f "$T"
+          fi
+          noctalia msg config-reload >/dev/null 2>&1 || true
+        }
+
+        # 1) 插件自身的壁纸事件 (起播/停止时的末帧回填与 M3 取色):
+        #    有 mpvpaper 进程 = 视频起播 → 关轮播 (定时轮换不再打断视频);
+        #    无进程 = 视频已停 (picker Stop 或切静态) → 恢复轮播。
+        #    时序依据 (插件源码): 起播先启进程后回填, 停止先杀进程后回填。
         case "$p" in
-          */noctalia/mpvpaper/*) exit 0 ;;
+          */noctalia/mpvpaper/*)
+            if pgrep -f "bin/mpvpaper" >/dev/null 2>&1; then
+              set_automation false
+            else
+              set_automation true
+            fi
+            exit 0
+            ;;
+        esac
+
+        # 2) 直接选中视频文件 —— 兜底放行 (起播本身由插件回填触发上面的分支)
+        case "$p" in
           *.mp4|*.webm|*.mkv|*.mov|*.gif|*.avi|*.m4v) exit 0 ;;
         esac
-        # 不在播 → 主壁纸层未被插件撤下, applied 直接显示, 无需干预
+
+        # 3) 视频在播 + 切静态图 = 用户手动切: 视频播放期间轮播已被关, 不存在
+        #    自动轮换事件, 故此分支必为手动操作 → 停视频 → 应用所选图 → 恢复
+        #    轮播。(若上面的关闭失败则退化为旧行为: 轮换误触发会停视频。)
         pgrep -f "bin/mpvpaper" >/dev/null 2>&1 || exit 0
-        # ★ 竞态修复: clear-all 是异步的 (杀进程 → ffmpeg 抽帧回填 → 恢复
-        #   主壁纸层), 且视频播放期间主壁纸层被插件撤下 (managed by external
-        #   source) —— 此刻的 wallpaper-set 只写 state、创建实例被屏蔽, 屏幕
-        #   不变 (实测: applied 无 creating 日志)。回填晚到再把壁纸换成视频帧,
-        #   用户看到"切静态失败, 动态变静态"。故: 先 clear-all, 等进程退出 +
-        #   回填/主层恢复落定, 再无条件 set 所选图 —— 此时主层已恢复, 才真正
-        #   显示。set 触发的 wallpaper_changed 重入: 视频已死 → 上方直接 exit,
-        #   无循环。
+        # ★ 竞态修复 (保留): clear-all 是异步的 (杀进程 → ffmpeg 抽帧回填 →
+        #   恢复主壁纸层), 且视频播放期间主壁纸层被插件撤下 (managed by
+        #   external source) —— 此刻的 wallpaper-set 只写 state、创建实例被
+        #   屏蔽, 屏幕不变 (实测: applied 无 creating 日志)。回填晚到再把壁纸
+        #   换成视频帧, 用户看到"切静态失败, 动态变静态"。故: 先 clear-all,
+        #   等进程退出 + 回填/主层恢复落定, 再无条件 set 所选图 —— 此时主层
+        #   已恢复, 才真正显示。set 触发的 wallpaper_changed 重入: 视频已死 →
+        #   上方分支直接 exit, 无循环。
         noctalia msg plugin noctalia/mpvpaper:service all clear-all
         # 等 mpvpaper 进程退出 (上限 5s)
         i=0
@@ -72,7 +120,14 @@ in {
         done
         # 插件异步收尾缓冲: 抽帧 (ffmpeg) + 回填 setWallpaper + 主层恢复
         sleep 1.5
-        noctalia msg wallpaper-set "$NOCTALIA_WALLPAPER_PATH"
+        # extract_last_frame=false 下, clear-all 恢复主层时显示的已是所选图,
+        # 通常无需再 set —— 重复 set 会多播一次过渡动画 (用户可见 "切两次":
+        # 第一次末帧、第二次所选图)。仅当状态未落到目标图时兜底 set。
+        cur="$(noctalia msg wallpaper-get 2>/dev/null || true)"
+        if [ "$cur" != "$NOCTALIA_WALLPAPER_PATH" ]; then
+          noctalia msg wallpaper-set "$NOCTALIA_WALLPAPER_PATH"
+        fi
+        set_automation true
         exit 0
       '';
     })
@@ -152,19 +207,32 @@ in {
     directory = "/home/${mainUser}/wallpaper"
     fill_color = "#26233a"
     transition_on_startup = true
+    # 切换壁纸的过渡效果 —— 每次随机挑一种 (官方文档: array of effects
+    # picked at random each transition; 省略此键 = 使用全部效果)。
+    # 注意键名是单数 transition (写 transitions 会被校验为 unknown setting)。
+    # 可选: fade / disc / honeycomb / stripes / wipe / zoom
+    transition = ["fade", "wipe", "zoom", "disc", "stripes", "honeycomb"]
+    transition_duration = 1500
 
     [wallpaper.default]
     path = "/home/${mainUser}/wallpaper/noctalia-wallpaper.png"
 
     [wallpaper.automation]
-    # 关闭: automation 轮换与手动切图在 wallpaper_changed 钩子层面无来源
-    # 标识, 保留它会让视频播放期间定时轮换误触发 "停视频换图" (钩子无法
-    # 区分); 且轮换的静态图被视频层盖住本就不可见。静态图固定一张, 想换
-    # 走设置面板 (会经 wallpaper-video-guard 停视频并应用所选图)。
-    enabled = false
+    # 静态壁纸每 interval_seconds 随机轮换一张 (与视频壁纸分开设置)。
+    # 动态开关: 由 wallpaper-video-guard 钩子自动维护 (写 settings.toml 覆盖,
+    # 该文件对 config.toml 是按键覆盖) ——
+    #   视频起播 → enabled=false: 轮换不再打断视频, 同时消除"轮换 vs 手动切图"
+    #     的来源歧义 (播放期间任何 wallpaper_changed 都必是手动操作);
+    #   视频停止 / 手动切静态图 → enabled=true: 恢复轮换。
+    # 因此无需 noctalia 暴露事件来源 (它只给 NOCTALIA_WALLPAPER_PATH/CONNECTOR)。
+    # recursive=false: 实测 (2026-09-12, 55 次采样覆盖 43/44 张图、0 次命中
+    # 视频) —— 轮换池按扩展名过滤, 即使递归也不会选中 video/ 里的 mp4; 视频
+    # 只能经 mpvpaper 插件播放, 递归只会白扫 32MB。
+    # order=random 实为洗牌后顺序遍历 (实测 30 次无重复), 非独立随机。
+    enabled = true
     interval_seconds = 1800
     order = "random"
-    recursive = true
+    recursive = false
 
     # ============================================================
     # shell 全局字体 (通知/启动器/控制中心/锁屏等所有 Noctalia UI)
@@ -295,7 +363,15 @@ in {
     [plugin_settings."noctalia/mpvpaper"]
     video_directory = "/home/${mainUser}/wallpaper/video"
     mute = true
-    extract_last_frame = true
+    # false: 停止视频/切静态时插件不回填末帧 —— 开着会让"动态切静态"播两次
+    # 过渡动画 (第一次末帧回填, 第二次所选图, 用户可见)。关闭后 clear-all 直接
+    # 恢复主壁纸层, 显示的即所选图。代价: ① 停止后不再有"末帧取色", 配色跟随
+    # 静态图 (更符合预期); ② picker 的 Stop 不再触发 wallpaper_changed (走
+    # setWallpaperEnabled 而非 setWallpaper), 轮播不会立即恢复 —— 下次手动
+    # 切图或重启 shell 时恢复 (config.toml 的 enabled=true)。
+    # 起播垫底缩略图走独立缓存 (~/.cache/noctalia/mpvpaper/<路径转写>.jpg,
+    # 已存在则不受本开关影响, 无黑屏; 新增视频首次播放时无垫底)。
+    extract_last_frame = false
 
     # GTK 明暗跟随 + 动态壁纸切静态桥接
     [hooks]
