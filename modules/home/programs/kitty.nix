@@ -1,5 +1,5 @@
 # 终端模拟器 kitty(Catppuccin Mocha 配色)
-{ ... }:
+{ pkgs, ... }:
 {
   programs.kitty = {
     enable = true;
@@ -52,4 +52,17 @@
       include themes/noctalia.conf
     '';
   };
+
+  # xdg-terminal-exec: freedesktop 的终端选择规范工具, 按
+  # ~/.config/xdg-terminals.list 的优先级挑终端 (每行一个 desktop 文件名,
+  # 取第一个可用的), 此处指定 kitty。供遵循该规范的程序使用。
+  # 注: Nautilus 的"在终端中执行"右键项**不走**这条路径 —— 它由 python 扩展
+  # nautilus-open-any-terminal 提供 (见 programs/nautilus.nix), 实测该扩展
+  # 与 xdg-terminal-exec 无关; 早前此处"需 xdg-terminal-exec 才出现菜单项"
+  # 的注释是误判, 已更正。
+  home.packages = [ pkgs.xdg-terminal-exec ];
+
+  xdg.configFile."xdg-terminals.list".text = ''
+    kitty.desktop
+  '';
 }

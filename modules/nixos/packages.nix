@@ -53,7 +53,18 @@
     bibata-cursors
 
     ### 文件管理
-    nautilus
+    # Nautilus override: 把 nautilus-python 加载器软链进**它自己的**扩展目录。
+    # Nautilus 只在自身 store 路径的 lib/nautilus/extensions-4/ 扫描扩展
+    # (二进制内该路径是单一硬编码值, 不搜索 XDG_DATA_DIRS), 不注入则第三方
+    # python 扩展 (nautilus-open-any-terminal) 永远加载不到 —— 这正是"在终端
+    # 中打开"只能退化为 scripts 子菜单的原因。override 是 NixOS 下实现顶层
+    # 原生菜单项的唯一途径; 路径为 Nautilus 稳定约定, 升级时留意即可。
+    (pkgs.nautilus.overrideAttrs (old: {
+      postInstall = (old.postInstall or "") + ''
+        ln -sf ${pkgs.nautilus-python}/lib/nautilus/extensions-4/libnautilus-python.so \
+          $out/lib/nautilus/extensions-4/libnautilus-python.so
+      '';
+    }))
     yazi
 
     ### 终端装饰
