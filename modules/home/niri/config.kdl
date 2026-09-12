@@ -14,7 +14,11 @@ include "rule.kdl"
 include "~/.config/niri/effects.kdl"
 
 // ================ 截图路径 ================
-screenshot-path "~/screenshot/Screenshot from %Y-%m-%d %H-%M-%S.png"
+// niri 内置 screenshot action 的落盘位置。注意与 Mod+Shift+S / Mod+Ctrl+Shift+S
+// 无关 —— 那两条走 grim|satty 管道, 保存路径由 satty 界面里决定 (binds.kdl)。
+// 归入 Pictures/ 与壁纸库 (Pictures/Wallpapers) 并列; 持久化由 persist.nix 的
+// "Pictures" 条目覆盖, 不需要单独的 bind 条目。
+screenshot-path "~/Pictures/screenshot/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
 // ================ 环境变量 ================
 environment {
@@ -96,6 +100,11 @@ spawn-at-startup "eye-care" "--sync"
 // 见 noctalia.nix) —— 弹窗风格统一, 且不再跑 polkit-gnome 这个 GTK 进程。
 // 注意: 整个会话只能有一个 agent, 故此处不再 spawn 任何外部认证代理
 // (它负责 systemctl reboot/poweroff/suspend、udisks2 挂载、flatpak 安装等授权)。
+
+// 剪贴板持久化守护: Wayland 剪贴板内容由"提供者进程"持有, 提供者一退内容
+// 即空 (GTK4 应用如 satty/Nautilus 的复制都这样)。该守护常驻接管内容, 让
+// 复制跨进程存活。--clipboard regular 只接管普通剪贴板, 不碰 primary。
+spawn-at-startup "wl-clip-persist" "--clipboard" "regular"
 
 // ================ 屏幕盖处理(laptop lid) ================
 // 合盖 → 仅锁屏 (noctalia lock); logind 对合盖全设 ignore 不挂起

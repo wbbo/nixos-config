@@ -133,10 +133,14 @@ binds {
     Mod+MouseBack    { focus-window-down; }
 
     // -------- 截图 --------
-    // 区域: Mod+Shift+S → slurp 框选 → satty 标注 (界面内自行保存/复制)
-    // 全屏: Mod+Ctrl+Shift+S → grim 全屏 → satty 标注 (全屏也可能需要标注)
-    Mod+Shift+S      { spawn "sh" "-c" "grim -g \"$(slurp)\" - | satty -f -"; }
-    Mod+Ctrl+Shift+S { spawn "sh" "-c" "grim - | satty -f -"; }
+    // 区域: Mod+Shift+S → slurp 框选 → 先复制进剪贴板, 再进 satty 标注
+    // 全屏: Mod+Ctrl+Shift+S → grim 全屏 → 同上
+    // 链路: 截图落临时文件 → wl-copy 复制 → satty 交互标注 (Ctrl+S 存到
+    // ~/Pictures/screenshot/) → satty 退出后删临时文件。
+    // 复制排在 satty 之前: 这样标注中途直接关窗, 原图也已在剪贴板里不丢。
+    // (satty 已升级 0.22.0 并开启 auto-copy: 标注改动即自动复制, 见 satty-config.toml)
+    Mod+Shift+S      { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim -g \"$(slurp)\" \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
+    Mod+Ctrl+Shift+S { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
 
     // -------- 系统 --------
     Mod+Q          { close-window; }

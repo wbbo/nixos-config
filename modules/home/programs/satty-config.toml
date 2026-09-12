@@ -1,10 +1,34 @@
-# satty 最小配置 —— 仅修中文标注渲染空白 (上游 Satty-org/Satty#617)
+# satty 配置 —— 中文渲染修复 + 截图统一落盘路径
 #
+# [font] 段: 修中文标注渲染空白 (上游 Satty-org/Satty#617)
 # 根因: 本机 Noto CJK 全部是可变字体 TTC (NotoSansCJK-VF.otf.ttc),
 # fontconfig 返回的 face index 高 16 位编码了 named-instance, satty 把
 # 整值当 TTC face index 用 → 字形加载失败 → 中文上屏后渲染空白。
 # 指定静态 TTF 的 Maple Mono NF CN (含中文, 与 noctalia 同款) 规避。
-# 除此之外 satty 全部使用默认配置。
 [font]
 family = "Maple Mono NF CN"
 style = "Regular"
+
+# [general] 段: 截图默认保存路径。
+# 与 niri 内置截图 (config.kdl 的 screenshot-path) 统一到
+# Pictures/screenshot, 持久化由 persist.nix 的 "Pictures" 条目覆盖。
+# 0.20.1 起值支持前导 ~ 展开, 并可用 strftime 格式符。
+# 行为边界 (0.20.1): 该路径只作用于「保存」动作 (Ctrl+S); 「另存为」仍弹
+# 文件对话框 —— 上游 0.21.0 起另存为才以它作为初始路径。
+# 另: 设 output-filename 不会让 satty 自动保存退出 (自动退出归 early-exit
+# 管), 这里刻意不设, 保留交互式标注。
+[general]
+output-filename = "~/Pictures/screenshot/%Y-%m-%d_%H-%M-%S.png"
+# 复制必须走外部 wl-copy。satty 的 copy-command 是 Option, 默认 None, 此时
+# 它用 GTK4 的 gdk::Clipboard —— 剪贴板内容由**应用进程本身**提供, satty
+# 一退出内容即消失。实测症状: 按 Esc 执行 "save-to-clipboard + exit" 后
+# 完全粘不出东西 (0.20.1 时代习惯按 Ctrl+C 复制且 satty 还开着, 故未暴露)。
+# wl-copy 会 fork 自保, 内容与 satty 的生命周期解耦 (实测可长期保留)。
+copy-command = "wl-copy"
+# auto-copy (0.21.0+): 每次标注改动即时复制到剪贴板 —— 即"编辑后自动复制",
+# 同时让"关窗不丢"自然成立: Mod+Q 关窗时最后一次改动早已复制进剪贴板。
+auto-copy = true
+# Esc = 复制后退出, 作为退出前的冗余保险 (复制幂等, 无副作用)。
+# 注意: Mod+Q 是 niri 的 close-window, 在 compositor 层就被拦截, satty
+# 收不到该按键 —— 退出标注请用 Esc。
+actions-on-escape = ["save-to-clipboard", "exit"]
