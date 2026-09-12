@@ -117,7 +117,7 @@
     name = "wework-fix-subwindow";
     runtimeInputs = [
       pkgs.python3
-      pkgs.xorg.xwininfo
+      pkgs.xwininfo
       pkgs.xdotool
     ];
     text = ''

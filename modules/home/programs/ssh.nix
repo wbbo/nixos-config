@@ -22,10 +22,29 @@
   # 只影响 ssh 客户端; sshd/authorized_keys 等与本文件无关。
   programs.ssh = {
     enable = true;
-    matchBlocks."github.com" = {
-      hostname = "ssh.github.com";
-      port = 443;
-      user = "git";
+    # matchBlocks 已废弃 (HM 新版改用 settings: 键为 Host 名, 值用 OpenSSH
+    # 上游指令名 Hostname/Port/User, 非旧的 camelCase)。
+    # enableDefaultConfig=false 关闭隐式默认值注入 (消除 evaluation warning),
+    # 下方 "*" 段即 HM 原默认值照抄 —— 与迁移前的 ssh 行为完全等价。
+    enableDefaultConfig = false;
+    settings = {
+      "*" = {
+        ForwardAgent = false;
+        AddKeysToAgent = "no";
+        Compression = false;
+        ServerAliveInterval = 0;
+        ServerAliveCountMax = 3;
+        HashKnownHosts = false;
+        UserKnownHostsFile = "~/.ssh/known_hosts";
+        ControlMaster = "no";
+        ControlPath = "~/.ssh/master-%r@%n:%p";
+        ControlPersist = "no";
+      };
+      "github.com" = {
+        Hostname = "ssh.github.com";
+        Port = 443;
+        User = "git";
+      };
     };
   };
 
