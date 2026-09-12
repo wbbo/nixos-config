@@ -26,9 +26,11 @@
       ".cache/uv"
       "code"                   # 源代码仓库 (含本配置, snapper 保护)
       "apps"                   # 应用/工具目录 (ventory 等, snapper 保护)
-      "screenshot"             # niri 截图目录 (config.kdl screenshot-path; 不持久化重装即丢)
-      # Pictures: 图片收藏 + 壁纸库 (Noctalia 轮播池与视频壁纸在
-      # Pictures/Wallpapers 下, 见 noctalia.nix; 原 ~/wallpaper 已整体迁入)
+      # Pictures: 图片收藏 + 壁纸库 + niri 内置截图输出。
+      # Noctalia 轮播池与视频壁纸在 Pictures/Wallpapers 下, 见 noctalia.nix;
+      # niri 的 screenshot-path 指向 Pictures/screenshot (config.kdl) ——
+      # 原顶层 ~/screenshot 已并入此处, 其独立 bind 条目随之移除 (挂载点
+      # 无法 mv, 迁移靠改配置 + rebuild 完成)。
       "Pictures"
       # 脚本安装工具 (claude/codex/cc-switch): 二进制 + 版本目录 + codex 登录态。
       # 重装(@root 重建)后保留, 补装用户服务"缺失才下载"不再触发, 消除下载依赖;
