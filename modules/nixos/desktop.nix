@@ -20,6 +20,19 @@
     ];
   };
 
+  ### 目录的默认处理器 —— 指向 Nautilus (见 packages.nix 的 nautilus 条目)
+  # 不显式设置时 xdg 按 desktop 文件名兜底, 而 kitty 自带的
+  # kitty-open.desktop 同样声明了 inode/directory 且字母序靠前 —— 实测
+  # `xdg-mime query default inode/directory` 返回 kitty-open.desktop, 后果是
+  # 从浏览器点"打开所在文件夹"拉起 kitty 而非文件管理器。
+  # 用系统级 xdg.mime.* (写 /etc/xdg/mimeapps.list) 而非 HM 的 xdg.mimeApps:
+  # 后者会接管 ~/.config/mimeapps.list, 覆盖用户手工维护的条目 (Thunderbird
+  # 的 mailto/message-rfc822 关联); 系统级文件优先级更低, 仅在用户级没有该
+  # MIME 的条目时补缺, 零风险。
+  # 注: 文件名是 org.gnome.Nautilus.desktop (Nautilus 50 的正式 desktop id,
+  # 无 nautilus.desktop 别名, 写错则静默无效)。
+  xdg.mime.defaultApplications."inode/directory" = "org.gnome.Nautilus.desktop";
+
   ### Wayland 会话环境变量
   environment.sessionVariables = {
     XDG_CURRENT_DESKTOP = "niri:sway";
