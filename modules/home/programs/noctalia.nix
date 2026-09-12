@@ -165,8 +165,8 @@ in {
   ];
 
   home.activation.createWallpaperDir = ''
-    mkdir -p /home/${mainUser}/wallpaper/video
-    cp -n ${noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default}/share/noctalia/assets/noctalia-wallpaper.png /home/${mainUser}/wallpaper/ || true
+    mkdir -p /home/${mainUser}/Pictures/Wallpapers/video
+    cp -n ${noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default}/share/noctalia/assets/noctalia-wallpaper.png /home/${mainUser}/Pictures/Wallpapers/ || true
   '';
 
   xdg.configFile."noctalia/config.toml".text = ''
@@ -204,7 +204,10 @@ in {
     # ============================================================
     [wallpaper]
     enabled = true
-    directory = "/home/${mainUser}/wallpaper"
+    # Noctalia 默认壁纸目录 (原为 ~/wallpaper, 2026-09-12 整体迁入):
+    # 图片轮播池 + video/ 子目录 (mpvpaper 插件) + 默认壁纸都在此树下,
+    # 目录创建与默认壁纸投放由 home.activation.createWallpaperDir 保证。
+    directory = "/home/${mainUser}/Pictures/Wallpapers"
     fill_color = "#26233a"
     transition_on_startup = true
     # 切换壁纸的过渡效果 —— 每次随机挑一种 (官方文档: array of effects
@@ -215,7 +218,7 @@ in {
     transition_duration = 1500
 
     [wallpaper.default]
-    path = "/home/${mainUser}/wallpaper/noctalia-wallpaper.png"
+    path = "/home/${mainUser}/Pictures/Wallpapers/noctalia-wallpaper.png"
 
     [wallpaper.automation]
     # 静态壁纸每 interval_seconds 随机轮换一张 (与视频壁纸分开设置)。
@@ -239,9 +242,20 @@ in {
     # ============================================================
     [shell]
     font_family = "Maple Mono NF CN"
+    # 内建 polkit 认证代理 (替代 niri 原先 spawn 的 polkit-gnome): 弹窗风格
+    # 统一, 且不再跑 GTK 认证进程。整个会话只能有一个 agent —— 故 config.kdl
+    # 已移除 spawn-at-startup "polkit-gnome-authentication-agent-1"。
+    # 它负责 reboot/poweroff/suspend、udisks2 挂载、flatpak 安装等图形授权。
+    # 前置: 需 logind / XDG_SESSION_ID (Noctalia 内建检查), 本机 systemd+greetd 满足。
+    polkit_agent = true
+    # 密码框样式: random = 输入时显示随机小图标 (替代默认实心圆点),
+    # 作用于所有密码输入场景 —— polkit 认证框、锁屏登录框等。
+    # 取值仅 default / random 两个 (用 `noctalia config validate` 实测;
+    # 注意: UI 选项名 filled-circles/random-icons 是翻译键, 不是配置值)。
+    password_style = "random"
 
     # ============================================================
-    # 会话菜单 (binds.kdl Ctrl+Alt+L → panel-toggle session)
+    # 会话菜单 (binds.kdl Mod+Alt+L → panel-toggle session)
     # actions 数组整体替换 noctalia 默认列表 (lock/logout/lock_and_suspend/
     # reboot/shutdown), 故逐项声明并在中间插入"休眠"。
     # 休眠无内置动作, 用 command 类型: 先锁屏再休眠 (与 lock_and_suspend
@@ -344,6 +358,30 @@ in {
     [widget.clock]
     format = "{:%Y-%m-%d %H:%M:%S}"
 
+    # ============================================================
+    # 空闲行为 (idle) —— 自动锁屏 + 自动关屏
+    # 结构实证 (2026-09-12): `[idle.behavior.<名字>]` 表, 有效字段仅
+    # action / timeout / locked_timeout / command / resume_command
+    # (kind/name/type/preset 均报 unknown setting); 名字取表键名, 无 name 字段。
+    # action 取值: lock / screen_off / suspend / custom (custom 配 command)。
+    # 用 `noctalia config validate <file>` 可离线校验候选写法。
+    # behavior_order 决定执行顺序 (TOML 表无序, 显式声明)。
+    # ============================================================
+    [idle]
+    behavior_order = ["lock-screen", "screen-off"]
+    # 触发前全屏渐暗秒数 (0 = 关闭); 兼作 "Idle Dim" 视觉预告
+    pre_action_fade_seconds = 5
+
+    [idle.behavior.lock-screen]
+    action = "lock"
+    timeout = 300          # 闲置 5 分钟 → 自动锁屏
+    locked_timeout = 300
+
+    [idle.behavior.screen-off]
+    action = "screen_off"
+    timeout = 600          # 闲置 10 分钟 → 关闭屏幕 (DPMS)
+    locked_timeout = 600
+
     [location]
     auto_locate = true
     [widget.tray]
@@ -354,14 +392,14 @@ in {
     # 插件由 Noctalia 运行时从官方插件仓库拉取 (plugins source official)。
     # extract_last_frame: 停止/暂停时抽视频末帧设为 Noctalia 壁纸 → M3 取色
     # → 全生态 (fcitx/kitty/菜单) 随视频帧变色。视频放入
-    # ${mainUser}/wallpaper/video/, Mod+W (binds.kdl) 唤出官方 picker 选视频。
+    # ${mainUser}/Pictures/Wallpapers/video/, Mod+W (binds.kdl) 唤出官方 picker 选视频。
     # 图片壁纸走 Noctalia 设置内的壁纸选择器 (automation 30min 轮换照常)。
     # ============================================================
     [plugins]
     enabled = ["noctalia/mpvpaper"]
 
     [plugin_settings."noctalia/mpvpaper"]
-    video_directory = "/home/${mainUser}/wallpaper/video"
+    video_directory = "/home/${mainUser}/Pictures/Wallpapers/video"
     mute = true
     # false: 停止视频/切静态时插件不回填末帧 —— 开着会让"动态切静态"播两次
     # 过渡动画 (第一次末帧回填, 第二次所选图, 用户可见)。关闭后 clear-all 直接
