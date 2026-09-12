@@ -27,10 +27,12 @@ environment {
     TERMINAL "kitty"
     TERM "kitty"
     QT_QPA_PLATFORMTHEME "gtk3"
-    QT_IM_MODULE "fcitx"
-    GTK_IM_MODULE "fcitx"
+    // 输入法: 方案 3 —— GTK/SDL legacy IM module 变量不设 (Wayland 原生
+    // text-input 生效, fcitx5.nix 有完整说明)。保留:
+    //   QT_IM_MODULES (Qt 6.8.2+ 官方写法, 本机 Qt 6.11.1)
+    //   XMODIFIERS (XWayland/wine 企业微信走 XIM, 必须)
+    QT_IM_MODULES "wayland;fcitx"
     XMODIFIERS "@im=fcitx"
-    SDL_IM_MODULE "fcitx"
     GLFW_IM_MODULE "ibus"
     INPUT_METHOD "fcitx"
     QT_QPA_PLATFORM "wayland;xcb"

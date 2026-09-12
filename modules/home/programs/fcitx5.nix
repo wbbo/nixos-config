@@ -18,11 +18,18 @@ in
   home.packages = [ fcitx5Pkgs ];
 
   # 环境变量(所有 Wayland 应用生效, Niri 环境变量在 niri config.kdl 也有)
+  # 方案 3 (2026-09-12, 方案 1 验证通过后): GTK/SDL 的 legacy IM module
+  # 变量全部不设 —— Wayland 下应走原生 text-input 协议 (官方 Wiki:
+  # "Do NOT set GTK_IM_MODULE" / KDE 段 "Do not set GTK_IM_MODULE &
+  # QT_IM_MODULE & SDL_IM_MODULE")。
+  #   - XMODIFIERS 必须保留: XWayland 应用 (wine 企业微信) 走 XIM。
+  #   - QT_IM_MODULES="wayland;fcitx": Qt 6.8.2+ 官方写法 (本机 Qt 6.11.1),
+  #     优先 Wayland 原生、fcitx 回退; 不再设旧的 QT_IM_MODULE —— 若将来
+  #     引入 Qt5 应用需把它加回。
+  #   - GLFW_IM_MODULE / INPUT_METHOD 官方未提及, 保留 (价值存疑但无害)。
   home.sessionVariables = {
-    GTK_IM_MODULE = "fcitx";
-    QT_IM_MODULE = "fcitx";
     XMODIFIERS = "@im=fcitx";
-    SDL_IM_MODULE = "fcitx";
+    QT_IM_MODULES = "wayland;fcitx";
     GLFW_IM_MODULE = "ibus"; # fcitx5 兼容 ibus
     QT_QPA_PLATFORM = "wayland;xcb";
     INPUT_METHOD = "fcitx";

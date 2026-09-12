@@ -106,8 +106,11 @@ Inherited_Environment_Variables 列表含 XMODIFIERS, 自动传入)。fcitx5 侧
 
 **待上游根治**: xwayland-satellite 在 NVIDIA 上无法读取 32 位 ARGB 窗口内容。
 已提交完整证据的 issue: **https://github.com/Supreeeme/xwayland-satellite/issues/502**
-(含环境矩阵、xwd/grim 对照、Depth-32 判据、全部排除实验、源码分析)。上游修复后
-wework-fix 守护可退役。
+—— 标题 "NVIDIA: 32-bit ARGB child windows are never captured — window stays
+permanently black (not just first-frame)"; 含环境矩阵、三方证据 (xwd 抓取 255 vs
+grim 7 vs unmap 后 250)、Depth-32 判据、全部排除实验与源码分析, 并与
+issue #329 / #225 / #416 / #196 做了差异对比。上游修复后 wework-fix 守护
+可退役。
 
 ### 2.2 崩溃循环 (TxBugReport 弹窗)
 
@@ -138,7 +141,54 @@ wine explorer.exe 的托盘窗 (159x19) 浮在桌面。**不可杀 explorer.exe 
 
 ---
 
-## 四、排错工具箱
+## 四、踩坑清单 (操作层教训)
+
+**进程操作**
+
+- `pkill -9 -f 'X.exe'` 与**同命令行内**含该字面量的启动参数 = 自杀 (pkill 匹配到自身
+  bash)。分两条命令执行; 模式写 `X[.]exe` 只能解决部分场景。
+- **杀 explorer.exe = 杀整个 wine 会话** (它是桌面进程, 企业微信一起退出) —— 托盘窗
+  只能窗口级 unmap。
+- **强杀 (-9) 会损坏企业微信登录态** (需重新扫码); 改注册表后须杀 wineserver 才生效
+  (它常驻缓存注册表)。
+- nix wrapper 进程的 **comm 带点前缀** (`.fcitx5-wrapped` / `.xwayland-satel`) →
+  `pgrep -x fcitx5` 永不匹配; 判活用 `systemctl --user is-active`。
+- 企业微信**单实例**: 旧实例在跑时新实例静默退出 (表现为「启动失败」)。
+
+**nix / systemd**
+
+- `writeShellScript` **不注入** runtimeInputs 的 PATH (脚本内命令必须绝对路径);
+  `writeShellApplication` 才注入。
+- `writeShellApplication` 默认 `set -eu -o pipefail`: 依赖 grep 无匹配的轮询脚本
+  需 `bashOptions = [ "u" ]`。
+- HM 生成的配置文件是 **store 只读链接**: `sed -i` 会把它替换成普通文件 (试验后须
+  `rm` + `cp` + `chmod 444` 还原); 无地址 sed 会误伤全文件。
+- HM 部署 unit 前须删除手动创建的同名 unit, 否则激活失败; flake 引用新文件须先
+  `git add`。
+- flatpak 沙箱内应用**不吃宿主代理**, 需 `flatpak override --user --env=...`。
+
+**显示 / 字体**
+
+- `place-within-backdrop` 是 **layer-rule 专用**属性, 放进 window-rule 会导致 niri
+  **拒载整份配置并静默跑旧配置**。
+- `xev -id` 只能收到窗口**已注册事件掩码**里的事件, 不能用它判断「事件未到达」。
+- 窗口像素 diff 需要**无操作对照组** (点击动画/视频帧都会污染结果)。
+- **CFF2 可变字体** (Noto CJK VF ttc) wine/freetype 枚举失败; fonttools 的 CFF2
+  instancer 产物会引发 wine 崩溃循环; 但**静态 TTF 间的 glyf 表级替换**安全可用。
+- Maple Mono CN 各字重的**中文字形是独立的** (实测 hash 不同);「英文比中文粗」是
+  等宽字体拉丁/汉字的视觉密度差, 不是配置错误。
+
+**wine 行为**
+
+- wine 10 的**虚拟桌面走注册表** (`HKCU\Software\Wine\Explorer\Desktop`), 命令行参数
+  不变; `regedit /S` **删除**注册表值会静默失败 → 停 wineserver 后直接编辑 `user.reg`。
+- 虚拟桌面模式下 satellite **完全无法转发窗口** (主窗 IsUnviewable), 比黑窗更糟 ——
+  此路不通 (详见上节)。
+- Bottles 自身的 `virtual_desktop` 参数不生效 (Bottles bug)。
+
+---
+
+## 五、排错工具箱
 
 ```bash
 # 判断「黑」在哪一层: X 服务端内容 (真值) vs 合成器输出 (所见)
@@ -161,7 +211,7 @@ systemctl --user status wework-fix fcitx5-xim-guard fcitx5
 DISPLAY=:0 xprop -root | grep XIM       # XIM 是否注册
 ```
 
-## 五、关键操作备忘
+## 六、关键操作备忘
 
 - 启动企业微信: `flatpak run --command=bottles-cli com.usebottles.bottles run -b 企业微信 -e "<prefix>/drive_c/Program Files (x86)/WXWork/WXWork.exe"`
 - **停机顺序**: 先停企业微信再动 satellite/X server (重启 X server 会杀死在跑的 wine 会话 —— wine 的 X 连接断开会 CriticalSection 死锁)
