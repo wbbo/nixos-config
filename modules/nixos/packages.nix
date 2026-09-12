@@ -44,9 +44,39 @@
 
     ### Wayland 工具链
     wl-clipboard
+    # 剪贴板持久化守护: Wayland 剪贴板内容由"提供者进程"持有, 工具一退即空
+    # (GTK4 应用如 satty/Nautilus 的复制都这样, 详见 satty-config.toml 注释)。
+    # 它常驻接管内容, 使复制跨进程存活; 由 niri spawn-at-startup 拉起
+    # (config.kdl 启动项区块), 不用 systemd 单元 —— 它依赖 Wayland 会话。
+    wl-clip-persist
     grim
     slurp
-    satty                     # 截图标注
+    # satty override: nixpkgs 停在上游 0.20.1, 而 auto-copy (标注改动即自动
+    # 复制, 0.21.0 起引入) 是截图工作流的关键, 故拉 0.22.0 源码本地构建。
+    # 与 nixpkgs 原表达式的差异:
+    #   1. src 换 Satty-org/Satty (上游仓库已从 gabm/Satty 迁移)
+    #   2. cargoDeps 必须显式覆盖, 不能改 cargoHash —— buildRustPackage 走
+    #      finalAttrs, cargoHash 在求值期就折叠成 cargoDeps, overrideAttrs
+    #      事后改 cargoHash 无效 (实测仍按旧 hash 校验并报 mismatch)
+    #   3. postInstall 去掉 installShellCompletion —— 0.22 不再随源码携带
+    #      completions/ 目录 (改由 build.rs 生成), 照搬旧命令会构建失败
+    (satty.overrideAttrs (old: rec {
+      version = "0.22.0";
+      src = pkgs.fetchFromGitHub {
+        owner = "Satty-org";
+        repo = "Satty";
+        rev = "v${version}";
+        hash = "sha256-76J4ZlBKeow2sWs1SeSkE8R2fKRTFD+B+7Vx3nbbQxY=";
+      };
+      cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+        inherit src;
+        name = "satty-${version}-vendor";
+        hash = "sha256-R8I8eZ8vy6w1DGNrkP9Os2tAOIetqXCyn0cxWpk9F+w=";
+      };
+      postInstall = ''
+        install -Dt $out/share/icons/hicolor/scalable/apps/ assets/satty.svg
+      '';
+    }))                    # 截图标注 (0.22.0, 见上方 override 说明)
 
     ### 美化 / 状态
     starship
