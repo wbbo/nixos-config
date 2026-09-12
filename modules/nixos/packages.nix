@@ -42,6 +42,22 @@
     ffmpeg-full
     libva-utils
 
+    ### 办公
+    # LibreOffice: nixpkgs 一等公民 + 原生 Wayland (GTK4/VCL 后端), 纯 Wayland
+    # 下没有额外兼容层。默认 langs 已含 zh-CN (见 nixpkgs
+    # pkgs/applications/office/libreoffice/default.nix 的 langs 列表), 中文
+    # 界面随包附带, 无需 override。
+    libreoffice
+    # 注: onlyoffice-desktopeditors 与 wpsoffice 曾于 2026-09-13 一并安装对比,
+    # 两者均已移除, 原因:
+    #   OnlyOffice —— FHS env 内中文字体回退有问题, PPT 里输入中文显示方框。
+    #   WPS      —— 自带私有 Qt 5.12, 不支持 niri 给 4K 屏选的 1.5 分数缩放,
+    #               界面字体过小 (需用户级 wrapper 设 QT_FONT_DPI=144 绕行);
+    #               且其 Option Center 用 Qt5 WebKit 渲染, 中文全显方框。
+    # 两者都属"能用但要持续绕行"的状态, 日常文档 LibreOffice 已足够覆盖。
+    # 若日后需要更好的 MS 格式保真, 优先考虑 rather than WPS:
+    #   onlyoffice-desktopeditors (AGPL 自由软件, 但需先解决字体回退)。
+
     ### Wayland 工具链
     wl-clipboard
     # 剪贴板持久化守护: Wayland 剪贴板内容由"提供者进程"持有, 工具一退即空
