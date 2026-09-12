@@ -141,9 +141,9 @@ binds {
     // -------- 系统 --------
     Mod+Q          { close-window; }
     Mod+Shift+E    { quit; }
-    Ctrl+Alt+Delete { quit; }
     Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
 
     // -------- 会话管理 (noctalia session 面板: 锁定/注销/锁定并挂起/休眠/重启/关机) --------
-    Ctrl+Alt+L { spawn-sh "noctalia msg panel-toggle session"; }
+    Mod+Alt+L   { spawn-sh "noctalia msg panel-toggle session"; }
+    Ctrl+Alt+L  { spawn-sh "noctalia msg session lock"; }   // 直接锁屏 (不经面板)
 }
