@@ -11,14 +11,16 @@
 # 一轮。进程门禁: 企业微信未运行时整个会话零扫描开销。
 # 注意: 不可杀 explorer.exe 进程 —— 它是 wine 会话的桌面进程, 杀掉会连带终止
 # 整个 wine 会话 (企业微信一起退出)。
-{ pkgs, ... }: let
+{ config, pkgs, ... }: let
   fixPy = pkgs.writeText "wework-fix.py" ''
     import os
     import re
     import subprocess
     import time
 
-    SCAN_INTERVAL = 2  # 秒; 实测用户对 3 秒旧版可接受, 2 秒余量更足
+    SCAN_INTERVAL = 1  # 秒; 原 2 秒在菜单/弹框场景可感知 (最坏 2 秒才 unmap),
+                       # 减半以平衡延迟与扫描开销 (进程门禁保证企业微信未运行
+                       # 时仍为零开销; 单轮 = 1 次全树 + 每候选窗 1 次 xwininfo)
 
     def sh(*args):
         # timeout 兜底: X 卡死时不阻塞; errors=replace: 非 UTF-8 窗标题
@@ -122,7 +124,20 @@
       exec python3 ${fixPy}
     '';
   };
+
+  # 启动器 wrapper: desktop 的 Exec 字段里写 Windows 路径的转义极绕
+  # (desktop-file-validate 实测报 "contains a quote which is not closed"),
+  # 用脚本封装, Exec 只写脚本名。flatpak 走 runtimeInputs 保证 PATH 可达。
+  weworkLaunch = pkgs.writeShellApplication {
+    name = "wework-launch";
+    runtimeInputs = [ pkgs.flatpak ];
+    text = ''
+      exec flatpak run --command=bottles-cli com.usebottles.bottles run \
+        -b 企业微信 -e 'C:\Program Files (x86)\WXWork\WXWork.exe'
+    '';
+  };
 in {
+  home.packages = [ weworkLaunch ];
   systemd.user.services.wework-fix = {
     Unit = {
       Description = "WeCom (Bottles) ARGB subwindow auto-fix";
@@ -137,4 +152,24 @@ in {
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };
+
+  # 桌面项: 让启动器 (Mod+Space) 能搜索并启动企业微信。
+  # 此前没有 .desktop, 只能开 Bottles GUI 手动点。Exec 走 wework-launch
+  # wrapper (desktop 的 Exec 转义规则写 Windows 路径会失败, 见上方注释)。
+  # 图标用 Bottles 已从 exe 提取的 WXWork.png。
+  # 单实例: 已在运行时再次启动会静默退出 (企业微信自身行为, 无害)。
+  xdg.dataFile."applications/wework.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=企业微信
+    Name[en_US]=WeCom
+    GenericName=企业通讯
+    Comment=企业微信 (Bottles/Wine)
+    Exec=wework-launch
+    Icon=${config.home.homeDirectory}/.var/app/com.usebottles.bottles/data/bottles/bottles/企业微信/icons/WXWork.png
+    Terminal=false
+    Categories=Network;InstantMessaging;
+    Keywords=wecom;wework;wxwork;企业微信;微信;
+    StartupNotify=false
+  '';
 }
