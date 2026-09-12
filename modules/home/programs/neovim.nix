@@ -19,6 +19,28 @@ in {
     # 不设 extraConfig/plugins —— LazyVim 完整接管 (init.lua 优先)
   };
 
+  # 文件管理器"用 Neovim 打开"修复 —— 上游 nvim.desktop 是 Terminal=true
+  # (文本编辑器的标准写法, 由桌面环境负责"帮我开个终端"); 但 niri 不是桌面
+  # 环境、无人处理该字段, Nautilus 遂直接 exec `nvim` → TUI 无 tty 立即退出
+  # (表现为右键"用 Neovim wrapper 打开"毫无反应, Name 还显示上游包名)。
+  # 用户级 ~/.local/share/applications 优先于 profile 级, 此处覆盖: 显式在
+  # kitty 中启动 + Terminal=false; MimeType 沿用上游列表并补 text/x-log。
+  # 用 xdg.dataFile 直接写文件 (同 wework.desktop 的既有写法) ——
+  # xdg.desktopEntries 在本仓库实测未产出文件, 不采用。
+  xdg.dataFile."applications/nvim.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Neovim
+    GenericName=Text Editor
+    Comment=Edit text files
+    Exec=${pkgs.kitty}/bin/kitty nvim %F
+    Terminal=false
+    Icon=nvim
+    Categories=Utility;TextEditor;Development;
+    StartupNotify=false
+    MimeType=text/english;text/plain;text/x-log;text/x-makefile;text/x-c++hdr;text/x-c++src;text/x-chdr;text/x-csrc;text/x-java;text/x-moc;text/x-pascal;text/x-tcl;text/x-tex;text/x-c;text/x-c++;application/x-shellscript;
+  '';
+
   # LazyVim 运行依赖 (git 系统已有; lazygit/fd/rg 为 LazyVim 工具集成)
   home.packages = with pkgs; [ lazygit fd ripgrep ];
 
