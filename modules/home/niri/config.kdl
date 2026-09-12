@@ -92,14 +92,16 @@ spawn-at-startup "noctalia"
 spawn-at-startup "niri-apply-resolution"
 // 对齐护眼状态: 修复 effects.kdl 链接 (若缺失) + 同步 wlsunset 色温
 spawn-at-startup "eye-care" "--sync"
-// polkit 认证代理: 授权 systemctl reboot/poweroff/suspend 等图形对话框
-spawn-at-startup "polkit-gnome-authentication-agent-1"
+// polkit 认证代理: 已移交 Noctalia 内建 (config.toml [shell] polkit_agent=true,
+// 见 noctalia.nix) —— 弹窗风格统一, 且不再跑 polkit-gnome 这个 GTK 进程。
+// 注意: 整个会话只能有一个 agent, 故此处不再 spawn 任何外部认证代理
+// (它负责 systemctl reboot/poweroff/suspend、udisks2 挂载、flatpak 安装等授权)。
 
 // ================ 屏幕盖处理(laptop lid) ================
 // 合盖 → 仅锁屏 (noctalia lock); logind 对合盖全设 ignore 不挂起
 // (modules/nixos/services.nix HandleLidSwitch*=ignore)。
 // 注意不要用 session lock-and-suspend —— 那会绕过 logind 配置直接挂起。
-// 休眠入口在会话菜单 (Ctrl+Alt+L → sudo hibernate-now 直写内核, 见 boot.nix)。
+// 休眠入口在会话菜单 (Mod+Alt+L → sudo hibernate-now 直写内核, 见 boot.nix)。
 // 开盖输入密码解锁; niri 合盖自动关内屏/开盖恢复, 无需配置。
 switch-events {
     lid-close { spawn "noctalia" "msg" "session" "lock"; }

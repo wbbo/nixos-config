@@ -1,7 +1,7 @@
 # Flatpak + GNOME Software —— 通用 Linux 应用分发(与 Nix 包互补)
 # Flatpak 应用沙箱隔离, 解决 nixpkgs 未打包 / 更新慢的闭源应用 (如聊天/办公软件)。
 # 系统级安装到 /var/lib/flatpak (普通可写目录, 跨 rebuild 保留);
-# 安装授权走 polkit (polkit-gnome agent 已由 niri 拉起)。
+# 安装授权走 polkit (认证代理: Noctalia 内建, 见 home/programs/noctalia.nix)。
 # 依赖 xdg.portal (desktop.nix 已启用 wlr+gtk 双 portal, 模块断言要求)。
 { pkgs, ... }:
 {
