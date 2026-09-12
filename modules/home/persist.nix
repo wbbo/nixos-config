@@ -27,6 +27,9 @@
       "code"                   # 源代码仓库 (含本配置, snapper 保护)
       "apps"                   # 应用/工具目录 (ventory 等, snapper 保护)
       "screenshot"             # niri 截图目录 (config.kdl screenshot-path; 不持久化重装即丢)
+      # Pictures: 图片收藏 + 壁纸库 (Noctalia 轮播池与视频壁纸在
+      # Pictures/Wallpapers 下, 见 noctalia.nix; 原 ~/wallpaper 已整体迁入)
+      "Pictures"
       # 脚本安装工具 (claude/codex/cc-switch): 二进制 + 版本目录 + codex 登录态。
       # 重装(@root 重建)后保留, 补装用户服务"缺失才下载"不再触发, 消除下载依赖;
       # .claude 配置目录在上面已持久化。
@@ -55,6 +58,11 @@
       # - com.tencent.WeChat: 微信聊天记录/登录态 (~300M)
       ".var/app/com.usebottles.bottles"
       ".var/app/com.tencent.WeChat"
+      # Lutris 游戏启动器: ~/.local/share/lutris 含自行下载的 wine runner /
+      # DXVK 与每个游戏的配置 (重下费时), ~/.config/lutris 为启动器设置。
+      # 注意: 游戏本体默认装在 ~/Games, 不在持久化范围 (体积大, 按需自定)。
+      ".local/share/lutris"
+      ".config/lutris"
     ];
   };
 }
