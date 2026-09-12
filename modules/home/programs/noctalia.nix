@@ -175,14 +175,17 @@ in {
     # muted: 低饱和柔和取色 (其余可选 m3-content/m3-tonal-spot/vibrant 等)
     wallpaper_scheme = "muted"
 
-    # 模板渲染: kitty/qt 动态取色 + fcitx NyxMellow 皮肤 (方案 A)。
+    # 模板渲染: kitty/qt/GTK 动态取色 + fcitx NyxMellow 皮肤 (方案 A)。
+    #   - gtk3/gtk4: 把壁纸取色写成 CSS 注入 ~/.config/gtk-{3,4}.0/gtk.css
+    #     (@import noctalia.css, 由模板 apply.sh 完成) —— Nautilus 等 GTK
+    #     应用随之跟随壁纸配色; 此前只有 theme-sync 的明暗跟随。
     # 刻意不含 starship: Noctalia 渲染 starship 会覆盖自定义 powerline palette (colors),
     # 导致 format 引用的 color_* 失效 → 无彩色。starship.toml 完全由 home-manager
     # 声明式管理 (见 starship.nix)。
     # nyxmellow 模板由 fcitx5.nix 部署到 ~/.local/share/fcitx5/themes/nyxmellow/templates/,
     # 渲染后 fcitx5 重启生效 (post_hook)。
     [theme.templates]
-    builtin_ids = ["kitty", "qt"]
+    builtin_ids = ["kitty", "qt", "gtk3", "gtk4"]
 
     [theme.templates.user.nyxmellow_theme]
     input_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/templates/theme.conf"
