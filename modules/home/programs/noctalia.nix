@@ -274,6 +274,9 @@ in {
 
     [[shell.session.actions]]
     action = "lock_and_suspend"
+    # label 覆盖内置翻译 ("锁定并挂起" → "睡眠"): 与下面自定义的 "休眠"
+    # 并列时语义更清晰 (sleep=S3 秒醒耗电 / hibernate=S4 断电不耗电)
+    label = "睡眠"
     shortcut = "3"
 
     [[shell.session.actions]]
