@@ -227,13 +227,17 @@ in
       PartOf = [ "graphical-session.target" ];
     };
     Service = {
-      # systemd 用户环境缺显示相关变量, fcitx5 连不上 Wayland/X 会静默退出
+      # systemd 用户环境缺显示相关变量, fcitx5 连不上 Wayland/X 会静默退出。
+      # 不设 GTK_IM_MODULE/QT_IM_MODULE: Wayland 下 GTK/Qt 走原生 text-input
+      # (官方 Wiki 要求), 且 fcitx5 检测到自身进程环境存在这两个变量会弹
+      # "Wayland Diagnose" 提示框 (检测的是 fcitx5 自己的环境, 不是客户端的;
+      # 字符串实证在 fcitx5-with-addons 的 .so 中) —— 上次清理只改了会话
+      # 变量与 HM environment.variables, 漏了这里, 故提示仍在。
+      # XMODIFIERS 必须保留: XWayland/wine 企业微信走 XIM。
       Environment = [
         "WAYLAND_DISPLAY=wayland-1"
         "DISPLAY=:0"
         "XMODIFIERS=@im=fcitx"
-        "GTK_IM_MODULE=fcitx"
-        "QT_IM_MODULE=fcitx"
       ];
       ExecStartPre = pkgs.writeShellScript "fcitx5-wait-x" ''
         # 清理 unit 之外的野实例 (手动启动/历史漂留), 避免单实例锁冲突:
