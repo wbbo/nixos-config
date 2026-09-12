@@ -30,4 +30,25 @@
   dconf.settings."com/github/stunkymonkey/nautilus-open-any-terminal" = {
     terminal = "kitty";
   };
+
+  # 侧边栏补回「文件系统」(root /) 入口。
+  # Nautilus 的侧边栏是 GTK 的 GtkPlacesSidebar, 它按 glib 的
+  # g_unix_mount_guess_should_display() 决定显示哪些挂载 —— 挂载点为 "/"
+  # 的一律判为 system internal 不予显示 (实测 `gio mount -l` 也只列出外接
+  # 卷, 没有 /)。GNOME 的设计假设是"根目录不是日常去处", 要经
+  # "其他位置 → 计算机"(computer:///) 才到。对比之下 Thunar 侧边栏有
+  # 「文件系统」, 是因为它用自家 shortcuts 模型硬编码了该条目。
+  # 这里用书签补回, 由 HM 声明式管理。
+  # 注意路径是 gtk-3.0: Nautilus 虽已是 GTK4 应用, 书签文件路径仍硬编码为
+  # ~/.config/gtk-3.0/bookmarks (见上游 src/nautilus-bookmark-list.c),
+  # 写 gtk-4.0 不生效。
+  # 代价: 该文件被 HM 接管为只读符号链接, 之后在 GUI 里 Ctrl+D 增删书签
+  # 写不进去 (重启即丢) —— 增减书签改为改此处配置后 rebuild。
+  xdg.configFile."gtk-3.0/bookmarks" = {
+    text = "file:/// 文件系统\n";
+    # GTK/Nautilus 首次运行会自建一个空的 bookmarks 文件, 而 HM 默认拒绝覆盖
+    # 已存在文件 (激活时报 "Existing file ... would be clobbered" 并整体
+    # 失败, 连带 switch 退出码 4), 故强制覆盖。
+    force = true;
+  };
 }
