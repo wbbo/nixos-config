@@ -65,6 +65,17 @@
       # 注意: 游戏本体默认装在 ~/Games, 不在持久化范围 (体积大, 按需自定)。
       ".local/share/lutris"
       ".config/lutris"
+      # Steam 游戏平台: 整个 ~/.local/share/Steam 一个目录装齐了游戏本体
+      # (steamapps/common)、Proton prefix (compatdata, Windows 存档在内)、
+      # 云同步缓存与客户端设置。不持久化则每次重启全部丢失 —— 实测下载到
+      # 6.6G 后重启即清零。
+      # 注: 放进 @persist 会进 snapper 快照, 但 btrfs 快照是 COW, 游戏文件
+      # 下载后基本不变, 快照几乎不额外占空间; 唯一代价是删游戏后空间延迟
+      # 释放 (等快照过期, 本机策略最长 6 个月)。
+      # 迁移记录: 首次接管时 ~/.local/share/Steam 是临时根上的真实目录,
+      # 需先 cp -a 到 /persist/home/wbb/.local/share/ 再清空原目录留作挂载点,
+      # 否则 bind mount 会把已有数据整个遮住。
+      ".local/share/Steam"
     ];
   };
 }
