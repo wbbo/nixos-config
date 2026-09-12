@@ -196,7 +196,7 @@ in
           # 属性名为 XIM_SERVERS (无下划线, xprop 实测)。
           # XIM 丢失 → restart (指数退避, 上限 300s, 防永久失败时无限重启输入法);
           # fcitx5 未跑 (退出 0 静默 / 手动 stop) → start。
-          out=$(${pkgs.coreutils}/bin/timeout 3 env DISPLAY=:0 ${pkgs.xorg.xprop}/bin/xprop -root 2>/dev/null) || out=""
+          out=$(${pkgs.coreutils}/bin/timeout 3 env DISPLAY=:0 ${pkgs.xprop}/bin/xprop -root 2>/dev/null) || out=""
           if [ -n "$out" ]; then
             if ! systemctl --user is-active --quiet fcitx5.service; then
               systemctl --user start fcitx5.service
@@ -250,7 +250,7 @@ in
           [ -S /tmp/.X11-unix/X0 ] && break
           sleep 1
         done
-        ${pkgs.xorg.xprop}/bin/xprop -root >/dev/null 2>&1 || true
+        ${pkgs.xprop}/bin/xprop -root >/dev/null 2>&1 || true
         sleep 2
       '';
       ExecStart = "${fcitx5Pkgs}/bin/fcitx5 --disable notificationitem";
