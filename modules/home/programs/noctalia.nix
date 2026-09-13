@@ -183,7 +183,8 @@ in {
     # 导致 format 引用的 color_* 失效 → 无彩色。starship.toml 完全由 home-manager
     # 声明式管理 (见 starship.nix)。
     # nyxmellow 模板由 fcitx5.nix 部署到 ~/.local/share/fcitx5/themes/nyxmellow/templates/,
-    # 渲染后 fcitx5 重启生效 (post_hook)。
+    # 渲染后由 post_hook 触发 classicui 热重载生效 (不重启服务; 详见本文件
+    # post_hook 处的实测说明)。
     [theme.templates]
     builtin_ids = ["kitty", "qt", "gtk3", "gtk4"]
 
@@ -198,10 +199,18 @@ in {
     [theme.templates.user.nyxmellow_highlight]
     input_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/templates/highlight.svg"
     output_path = "/home/${mainUser}/.local/share/fcitx5/themes/nyxmellow/highlight.svg"
-    # fcitx5 由 systemd 用户服务管理 (fcitx5.nix): 皮肤模板渲染后重启该服务生效。
-    # --no-block: 不阻塞 Noctalia 渲染线程 (fcitx5 重启约 3-5 秒, 阻塞会卡 UI)。
+    # fcitx5 由 systemd 用户服务管理 (fcitx5.nix)。模板渲染后要让 classicui 重读
+    # theme.conf —— 走 D-Bus 的 ReloadAddonConfig 热重载, 不再重启服务:
+    # 重启会中断输入 3-5 秒并丢失候选词状态, 而模板渲染的触发源是壁纸变化
+    # (wallpaper.automation 默认每 30 分钟轮播 + 每次手动换壁纸都算), 等于把
+    # 输入法按壁纸频率反复打断。
+    # 实测 (strace, 2026-09-14): ReloadAddonConfig classicui 会重读
+    # ~/.config/fcitx5/conf/classicui.conf, 并按 XDG 顺序打开
+    # ~/.local/share/fcitx5/themes/<theme>/theme.conf, 且 MainPID 不变 ——
+    # 皮肤生效、进程不中断。对照组: fcitx5-remote -r 只重读
+    # ~/.config/fcitx5/config, **不碰主题文件** (同批 strace 实证), 不能替代。
     # 不要用 fcitx5 -d 兜底 —— 会创建绕过 systemd 的野实例 (单实例锁冲突源)。
-    post_hook = "systemctl --user restart --no-block fcitx5.service"
+    post_hook = "${pkgs.systemd}/bin/busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 ReloadAddonConfig s classicui"
     # ============================================================
     # 壁纸
     # ============================================================
