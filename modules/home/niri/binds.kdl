@@ -139,8 +139,20 @@ binds {
     // ~/Pictures/screenshot/) → satty 退出后删临时文件。
     // 复制排在 satty 之前: 这样标注中途直接关窗, 原图也已在剪贴板里不丢。
     // (satty 已升级 0.22.0 并开启 auto-copy: 标注改动即自动复制, 见 satty-config.toml)
-    Mod+Shift+S      { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim -g \"$(slurp)\" \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
-    Mod+Ctrl+Shift+S { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
+    // grim -c: 把鼠标指针合成进截图。wlr-screencopy 协议里光标是**选择性**的
+    // (capture_output 的 overlay_cursor 参数, 传 0 就不画), grim 默认传 0,
+    // 所以必须显式加 -c 才有指针。
+    // 对照: wf-recorder 在同一个调用点**硬编码传 1**, 所以录屏里一直有指针
+    // (曾误判为"不录指针", 教训见 record-toggle 注释)。
+    Mod+Shift+S      { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim -c -g \"$(slurp)\" \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
+    Mod+Ctrl+Shift+S { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim -c \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
+
+    // -------- 录屏 --------
+    // Mod+Alt+R 切换 (开始/停止), 全屏 + 系统声音, NVENC 硬件编码。
+    // 封装在 record-toggle 脚本 (modules/home/niri/default.nix): 负责进程判据、
+    // SIGINT 收尾、通知反馈; 输出 ~/Videos/record/rec-<时间戳>.mkv (与 gsr/OBS 共用该目录)。
+    // 注: Mod+Shift+R 已被 switch-preset-window-height 占用, 故用 Mod+Alt 系列。
+    Mod+Alt+R       { spawn-sh "record-toggle"; }
 
     // -------- 系统 --------
     Mod+Q          { close-window; }
