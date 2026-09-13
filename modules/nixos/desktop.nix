@@ -42,7 +42,11 @@
     GDK_BACKEND = "wayland";
     TERMINAL = "kitty";
     TERM = "kitty";
-    SDL_VIDEODRIVER = "wayland";
+    # SDL 视频后端: wayland 优先, 失败回退 X11 (经 xwayland-satellite)。
+    # 原为纯 "wayland" —— 该写法禁止回退, SDL 应用 (Steam 等) 一旦 Wayland
+    # 初始化不顺就直接失败而非降级。Steam 日志里有明确警告:
+    #   SDL_VIDEODRIVER='wayland' does not allow fallback, use 'wayland,x11'
+    SDL_VIDEODRIVER = "wayland,x11";
     XCURSOR_THEME = "Bibata-Modern-Ice";
     XCURSOR_SIZE = "24";
   };

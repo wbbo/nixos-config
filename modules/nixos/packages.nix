@@ -67,6 +67,11 @@
     wl-clip-persist
     grim
     slurp
+    # 录屏: wlroots 系标准方案, 直接用 niri 的 zwlr_screencopy 协议 (无 portal
+    # 中间层)。由 record-toggle 封装成 Mod+Alt+R 切换 (见 modules/home/niri/
+    # default.nix), 输出到 ~/Videos (已持久化)。ffmpeg 支持 h264_nvenc, 故
+    # 可用 4090 硬件编码。
+    wf-recorder
     # satty override: nixpkgs 停在上游 0.20.1, 而 auto-copy (标注改动即自动
     # 复制, 0.21.0 起引入) 是截图工作流的关键, 故拉 0.22.0 源码本地构建。
     # 与 nixpkgs 原表达式的差异:

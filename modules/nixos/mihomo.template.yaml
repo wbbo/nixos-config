@@ -43,6 +43,15 @@ rules:
   - PROCESS-NAME,Wow.exe,DIRECT
   - PROCESS-NAME,vcsc.exe,DIRECT
   - PROCESS-NAME,Battle.net.exe,DIRECT
+  # Dark Souls III: 不直连则落到默认 PROXY 组走 url-test 选的节点, 而多数机场
+  # 节点对 UDP 支持差 —— DS3 服务器通信依赖 UDP, 表现为永久卡在"正在登录
+  # 游戏服务器"且无报错 (UDP 无连接状态, 超时无声)。实测: 进程只有本地回环
+  # 连接, 零对外 socket。
+  # 两条写法都列: mihomo 取进程名的来源在 Linux 上可能是被截断的 comm
+  # (15 字符上限, DarkSoulsIII.exe → DarkSoulsIII.ex), 也可能是完整 cmdline,
+  # 同时列出可覆盖两种匹配源。
+  - PROCESS-NAME,DarkSoulsIII.exe,DIRECT
+  - PROCESS-NAME,DarkSoulsIII.ex,DIRECT
   - PROCESS-NAME,ToDesk.exe,DIRECT
   - PROCESS-NAME,WXWork.exe,DIRECT
   - PROCESS-NAME,SunloginClient.exe,DIRECT

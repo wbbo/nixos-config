@@ -72,9 +72,79 @@ let
       fi
     '';
   };
+
+  # 录屏切换 (Mod+Alt+R): 全屏 + 系统声音, NVENC 硬件编码。
+  # 状态判据 = wf-recorder 进程是否存在; 输出路径记在 XDG_RUNTIME_DIR 的状态
+  # 文件里, 停止时据此报出文件名。
+  # 注: wf-recorder 是前台阻塞程序, 靠 SIGINT 收尾并写索引, 不能像截图那样
+  # 一条命令跑完。故用 pkill -x 精确匹配进程名 —— 本会话踩过 pkill -f 把自身
+  # 命令行也匹配上的坑。
+  # -a 录 default sink 的 monitor (系统声音); 要录麦克风改用 -a <device>,
+  # 设备名用 pactl list short sources 查。
+  # 光标: wf-recorder 在 screencopy 调用点**硬编码** overlay_cursor=1
+  # (main.cpp: zwlr_screencopy_manager_v1_capture_output(manager, 1, output)),
+  # 即始终把鼠标指针画进画面, 且没有开关能关掉 (gsr 则提供 -cursor yes|no)。
+  # 曾因"源码里搜不到 cursor 字样"误判为不录指针 —— 位置实参的字面量搜不到,
+  # 字符串搜索只能证明存在、不能证明不存在。
+  # 编码: 4090 的 h264_nvenc (nixpkgs 的 ffmpeg 已启用 nvenc)。画质不满意可加
+  # -p preset=p5 -p cq=23 (编码器参数经 -p key=value 透传)。
+  # 输出用 .mkv (Matroska) 而非 .mp4: mp4 的索引 (moov) 只在**正常收尾**时才写
+  # 入文件末尾, 崩溃/断电/被 kill 都留下一个没索引、任何播放器都打不开的文件
+  # (实测: 一段 1h46m 的 4K 录制因此差点全废, 靠 /proc/<pid>/fd 才抢回来)。
+  # Matroska 按块落盘 (实测 ~2MB 一块, 3Mbps 下约 5 秒), 强杀后已落盘部分
+  # ffprobe/mpv 均可正常读取, 最多丢最后一块; 代价是没有 trailer —— duration
+  # 显示 N/A 且不能拖进度条 (正常停止的文件不受影响)。注意粒度: 总量不足
+  # 一块的短录制 (约 40 秒内) 强杀仍会全丢。A/B 实测 (录 10 秒 kill -9):
+  # mkv 6.3MB 落盘 → h264 可解码播放; mp4 7.6MB 落盘 → "moov atom not found"。
+  # 分享需要 mp4 时 ffmpeg -i in.mkv -c copy out.mp4 无损转一下即可。
+  # wf-recorder 按扩展名选封装器 (-f out.mkv → matroska)。
+  record-toggle = pkgs.writeShellApplication {
+    name = "record-toggle";
+    runtimeInputs = [ pkgs.wf-recorder pkgs.libnotify pkgs.coreutils pkgs.procps ];
+    text = ''
+      set -uo pipefail
+      exec 9>"''${XDG_RUNTIME_DIR:-/tmp}/nixos-record.lock"
+      flock -w 5 9 || exit 1
+
+      # 输出统一到 ~/Videos/record/ —— 全部录制工具 (wf-recorder / GPU Screen
+      # Recorder / OBS) 共用这一个目录, 靠各自的文件名模式区分来源。
+      # 在 ~/Videos 之下, 故持久化自动覆盖 —— persist.nix 只声明 Videos 顶层,
+      # 子目录随之落盘。
+      DIR="$HOME/Videos/record"
+      STATE="''${XDG_RUNTIME_DIR:-/tmp}/nixos-record.state"
+      mkdir -p "$DIR"
+
+      if pgrep -x wf-recorder >/dev/null 2>&1; then
+        OUT="$(cat "$STATE" 2>/dev/null || true)"
+        pkill -INT -x wf-recorder
+        # 等它真正写完索引再报"已保存": 固定 sleep 1 在长录制下可能提前宣告成功
+        # (且此时 pgrep 判据仍为真, 紧接着再按会被当成"正在录制"而非"停止")。
+        for _ in $(seq 20); do
+          pgrep -x wf-recorder >/dev/null 2>&1 || break
+          sleep 0.5
+        done
+        rm -f "$STATE"
+        if [ -n "$OUT" ]; then
+          notify-send -t 3000 "录屏已停止" "已保存: $(basename "$OUT")"
+        else
+          notify-send -t 3000 "录屏已停止"
+        fi
+        exit 0
+      fi
+
+      OUT="$DIR/rec-$(date +%F_%H-%M-%S).mkv"
+      echo "$OUT" > "$STATE"
+      notify-send -t 2000 "开始录屏" "输出: $(basename "$OUT") (再按 Mod+Alt+R 停止)"
+      # 9>&-: 关闭锁 fd —— 否则 wf-recorder 继承 fd 9 把锁一直带到录制结束, 期间
+      # 每次按键都会卡在 flock -w 5 上然后 exit 1 静默退出 (表现为"按了没反应,
+      # 停不下来"; 实测一段 1h46m 的录制就是这么停不掉的)。eye-care 的 wlsunset
+      # 踩过同一个坑, 那里已用 9>&-。
+      exec wf-recorder -c h264_nvenc -a -f "$OUT" 9>&-
+    '';
+  };
 in
 {
-  home.packages = [ niri-apply-resolution eye-care pkgs.xwayland-satellite ];
+  home.packages = [ niri-apply-resolution eye-care record-toggle pkgs.xwayland-satellite ];
 
   # force = true: 接管首启自动生成的官方默认 config.kdl
   # (全新安装首启 niri 会生成默认模板, 非 HM 链接; 无 force 时 HM clobber

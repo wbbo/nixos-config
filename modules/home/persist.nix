@@ -10,6 +10,13 @@
 { ... }:
 {
   home.persistence."/persist" = {
+    # hideMounts: 让 impermanence 生成的 bind mount 直接带 x-gvfs-hide,
+    # GVFS/udisks2 就不会把持久化目录当"挂载卷"上报, 文件管理器侧边栏不再
+    # 显示它们。impermanence 的 submodule-options.nix 里每个目录的 hideMount
+    # 默认值继承本项, 故声明一次即全局生效 —— 挂载时即隐藏, 不需要任何事后
+    # remount 补救 (原 modules/nixos/persist.nix 的 hide-persist-mounts 服务
+    # 因此退役, 那方案对新增目录还会漏)。
+    hideMounts = true;
     directories = [
       # 编译链缓存/配置 (大、下载慢, 重装后保留): maven/gradle/rust/go/node/pnpm/npm/uv
       ".claude"
@@ -32,6 +39,13 @@
       # 原顶层 ~/screenshot 已并入此处, 其独立 bind 条目随之移除 (挂载点
       # 无法 mv, 迁移靠改配置 + rebuild 完成)。
       "Pictures"
+      # 录屏输出 (wf-recorder, Mod+Alt+R 切换)。4K 编码文件体积大, 不持久化
+      # 则重启即丢; 与 Pictures 同属"用户产出物", 一并持久化便于统一管理。
+      "Videos"
+      # 浏览器/应用默认下载位置 (XDG_DOWNLOAD_DIR 已统一指向它, 见
+      # modules/home/default.nix 的 xdg.userDirs)。此前不在清单里, 一直落在
+      # 临时根上 —— 重启即丢, 下载的东西需要及时挪走。
+      "Downloads"
       # 脚本安装工具 (claude/codex/cc-switch): 二进制 + 版本目录 + codex 登录态。
       # 重装(@root 重建)后保留, 补装用户服务"缺失才下载"不再触发, 消除下载依赖;
       # .claude 配置目录在上面已持久化。
@@ -58,8 +72,13 @@
       # - com.usebottles.bottles: Bottles wineprefix + 下载的 runner/组件
       #   (wineprefix 内含已装 Windows 应用, 无法重建, 必须持久化)
       # - com.tencent.WeChat: 微信聊天记录/登录态 (~300M)
+      # - com.dec05eba.gpu_screen_recorder: 录屏设置 (输出目录/编码器/回放参数)
+      # - com.obsproject.Studio: 场景集合/配置文件/输出设置
+      #   (以上两个录像工具的输出统一落在 ~/Videos/record, 该目录已随 Videos 持久化)
       ".var/app/com.usebottles.bottles"
       ".var/app/com.tencent.WeChat"
+      ".var/app/com.dec05eba.gpu_screen_recorder"
+      ".var/app/com.obsproject.Studio"
       # Lutris 游戏启动器: ~/.local/share/lutris 含自行下载的 wine runner /
       # DXVK 与每个游戏的配置 (重下费时), ~/.config/lutris 为启动器设置。
       # 注意: 游戏本体默认装在 ~/Games, 不在持久化范围 (体积大, 按需自定)。

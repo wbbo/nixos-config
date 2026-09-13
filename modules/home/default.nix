@@ -55,6 +55,18 @@
   # 两条启动路径语言一致; 需重新登录 (systemd user manager 启动时读取) 生效。
   systemd.user.sessionVariables.LANG = "zh_CN.UTF-8";
 
+  # XDG 用户目录: 统一声明为英文路径 (HM 默认值即 $HOME/Downloads 等英文名)。
+  # 此前系统完全没有 ~/.config/user-dirs.dirs —— HM 的 xdg.userDirs 默认
+  # 不启用, 于是各应用只能自己猜"下载目录在哪": 硬编码的用 ~/Downloads,
+  # 按 locale 推导的 ($LANG=zh_CN.UTF-8) 造出 ~/下载, 两套并存。
+  # createDirectories = false: 只写声明文件供所有应用读取, 不额外创建
+  # Desktop/Public/Templates 这些用不到的目录 (已存在的
+  # Downloads/Documents/Pictures/Videos 保持原样)。
+  xdg.userDirs = {
+    enable = true;
+    createDirectories = false;
+  };
+
   # 让 Home Manager 自身可管理(避免首次激活告警)
   programs.home-manager.enable = true;
 
@@ -84,5 +96,11 @@
 
     # Noctalia Shell(面板/通知/启动器/锁屏)
     noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
+
+    # 录屏工具 (GPU Screen Recorder / OBS Studio) 统一走 Flathub Flatpak 安装,
+    # 与微信同一套路: 系统级 /var/lib/flatpak 跨 rebuild 天然保留, 而
+    # ~/.var/app/<app> 属家目录, 在 modules/home/persist.nix 里显式持久化。
+    # 此处曾装 nixpkgs 版 gpu-screen-recorder (CLI, 5.13.8) 用于对比试用,
+    # 现已移除 —— 避免与 Flatpak 版并存两个版本。
   ];
 }
