@@ -31,6 +31,29 @@
     terminal = "kitty";
   };
 
+  # 目录默认处理器 —— 数据层补一条, 专治「Steam 里点浏览文件夹却打开了 kitty」。
+  #
+  # 主机上的修复在 modules/nixos/desktop.nix (系统级 xdg.mime, 把
+  # inode/directory 指向 Nautilus), `xdg-mime query` 确认生效。但 Steam 调文件
+  # 管理器是在它自己的 pressure-vessel 沙箱里 —— 实测 `nsenter -t <steamwebhelper>
+  # -m` 进去看: **/etc/xdg/mimeapps.list 不存在**, XDG_CONFIG_DIRS 里那些路径
+  # 也都指向沙箱内的 root 视角。于是解析回退成"扫全部 .desktop 按字母序取第一个",
+  # kitty 自带的 kitty-open.desktop 同样声明了 inode/directory 且字母序靠前, 胜出。
+  #
+  # 为什么不用 ~/.config/mimeapps.list: 那是用户手工维护的 (Thunderbird 的
+  # mailto/message-rfc822 关联在里面), 由 HM 接管会整体覆盖 (同 desktop.nix 注释)。
+  # mimeapps 的解析顺序是 config 层在前、data 层在后:
+  #   ~/.config/mimeapps.list          无 inode/directory → 跳过
+  #   /etc/xdg/mimeapps.list           主机生效, 沙箱内不可见
+  #   ~/.local/share/applications/...  ← 本条目, 两层都读得到 (家目录沙箱内共享)
+  xdg.dataFile."applications/mimeapps.list" = {
+    force = true;
+    text = ''
+      [Default Applications]
+      inode/directory=org.gnome.Nautilus.desktop
+    '';
+  };
+
   # 侧边栏补回「文件系统」(root /) 入口。
   # Nautilus 的侧边栏是 GTK 的 GtkPlacesSidebar, 它按 glib 的
   # g_unix_mount_guess_should_display() 决定显示哪些挂载 —— 挂载点为 "/"
