@@ -195,11 +195,29 @@ ${prefillCmds}
     networking.firewall.allowedTCPPorts = [ 53 ];
 
     # 允许 DynamicUser=mihomo 绑定 53 端口 (DNS) + 操作 TUN 设备
+    # + 尝试识别发起进程 (CAP_SYS_PTRACE): PROCESS-NAME 规则要靠枚举
+    # /proc/<pid>/fd 把 socket inode 映射回进程, 而读**别的用户**的
+    # /proc/<pid>/fd 需要 PTRACE_MODE_READ —— DynamicUser 身份下无此权限。
+    # ⚠ 实测结论 (2026-09-13): 本能力与下方 ProtectProc/ProcSubset 全部补齐
+    # 之后, 连接表里的进程名**依然是 "?"** (连自己发起的 curl 也认不出),
+    # 证据指向 TUN 入口流量无 socket 可回溯的固有限制。所以**本机所有
+    # PROCESS-NAME 规则实际都不生效** —— 依赖它们直达的需求 (如 Steam 联机)
+    # 必须在 mihomo.template.yaml 用 DOMAIN-SUFFIX / IP-CIDR 表达 (已如此处理,
+    # 见该文件 Steam/Valve 段; 不要把注释写成"进程识别已恢复")。
+    # 这几项配置保留: 无害, 进程识别若将来恢复即可直接受益。
     systemd.services.mihomo.serviceConfig = {
-      AmbientCapabilities = lib.mkForce "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
-      CapabilityBoundingSet = lib.mkForce "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
+      AmbientCapabilities = lib.mkForce "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_PTRACE";
+      CapabilityBoundingSet = lib.mkForce "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SYS_PTRACE";
       # gVisor netstack 需要 epoll_wait 等不在 @system-service 白名单中的 syscall
       SystemCallFilter = lib.mkForce [];
+      # 进程识别的后半截: 光有 CAP_SYS_PTRACE 不够, systemd 默认还挂了
+      # ProtectProc=invisible (私有 /proc, 其他用户进程不可见) + ProcSubset=pid
+      # (/proc/net/* 不可见) —— 二者任一都会让 mihomo 找不到 socket 的属主。
+      # 实测: 加能力后连接表进程名仍是 "?" (自己发起的 curl 也认不出)。
+      # ptraceable = 允许带 CAP_SYS_PTRACE 的进程查看/跟踪其它进程;
+      # all = 放开非 pid 的 /proc 项 (mihomo 要读 /proc/net/* 定位 socket inode)。
+      ProtectProc = lib.mkForce "ptraceable";
+      ProcSubset = lib.mkForce "all";
       # 状态数据持久化: 模块 ExecStart 用 -d /var/lib/private/mihomo (DynamicUser 的
       # StateDirectory 位于 /var/lib/private/<name>), 直接映射 /persist/var/lib/mihomo
       # 到该路径 (结构一致, 零概念转换); ruleset 缓存/cache.db/ui 相对 -d 解析,

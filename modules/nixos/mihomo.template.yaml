@@ -88,7 +88,7 @@ rules:
   - RULE-SET,icloud,DIRECT
   - RULE-SET,apple,DIRECT
   - RULE-SET,direct,DIRECT # 明确直连的域名
-  - RULE-SET,applications,DIRECT # 应用类直连（如 Steam）
+  - RULE-SET,applications,DIRECT # 应用类**进程**直连（代理/BT 工具的 PROCESS-NAME，不含任何域名）
   - RULE-SET,google,PROXY # Google 全家桶
   - RULE-SET,proxy,PROXY # 明确需代理的域名
   - RULE-SET,telegramcidr,PROXY # Telegram IP
