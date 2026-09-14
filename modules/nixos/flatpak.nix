@@ -42,6 +42,10 @@
   #   - com.usebottles.bottles: 企业微信的 wine 前端 (bottle 本体 11G 在
   #     persist, 含已配置的企业微信 + runner + 组件)
   #   - com.tencent.WeChat: 微信官方 Linux 版 (聊天记录/登录态在 persist)
+  #   - io.typora.Typora: Markdown 编辑器 (偏好设置/授权在 persist)
+  #   - md.obsidian.Obsidian: 笔记应用 (应用配置/插件在 persist)
+  #   - com.obsproject.Studio: 录屏 (场景集合/输出设置; 输出落 ~/Videos/record)
+  # 以上应用的 ~/.var/app/<app> 数据均在 persist.nix 声明持久化。
   # 开机 3 分钟检查, 缺哪个装哪个 (已装秒退, 幂等); 之后每 15 分钟复查,
   # 失败/网络波动自动重试。首次补齐可能下载数百 MB (含 runtime),
   # TimeoutStartSec 放宽到 30 分钟; 与 flatpak-flathub 同样依赖 mihomo
@@ -60,7 +64,9 @@
     # 注意用 if ! 而非 `cmd && continue`: 后者在条件为假时整个列表返回非零,
     # 若脚本被以 set -e 执行会直接终止 (同款陷阱在 gh 钩子踩过)
     script = ''
-      for app in com.usebottles.bottles com.tencent.WeChat; do
+      for app in \
+        com.usebottles.bottles com.tencent.WeChat \
+        io.typora.Typora md.obsidian.Obsidian com.obsproject.Studio; do
         if ! flatpak info --system "$app" >/dev/null 2>&1; then
           flatpak install --system --noninteractive flathub "$app" || true
         fi

@@ -97,10 +97,11 @@
     # Noctalia Shell(面板/通知/启动器/锁屏)
     noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
 
-    # 录屏工具 (GPU Screen Recorder / OBS Studio) 统一走 Flathub Flatpak 安装,
-    # 与微信同一套路: 系统级 /var/lib/flatpak 跨 rebuild 天然保留, 而
-    # ~/.var/app/<app> 属家目录, 在 modules/home/persist.nix 里显式持久化。
-    # 此处曾装 nixpkgs 版 gpu-screen-recorder (CLI, 5.13.8) 用于对比试用,
-    # 现已移除 —— 避免与 Flatpak 版并存两个版本。
+    # 录屏工具 OBS Studio 走 Flathub Flatpak 安装, 与微信同一套路:
+    # 系统级 /var/lib/flatpak 跨 rebuild 天然保留, 而 ~/.var/app/<app>
+    # 属家目录, 在 modules/home/persist.nix 里显式持久化。
+    # gpu-screen-recorder (GSR) 曾以 nixpkgs CLI 与 Flatpak 两种形态试用,
+    # 2026-09-14 已全部移除 (nix 包下线 + Flatpak 卸载并清理运行时残留);
+    # 日常录屏用 niri 的 record-toggle (wf-recorder, Mod+Alt+R)。
   ];
 }
