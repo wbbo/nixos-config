@@ -106,8 +106,8 @@ let
       exec 9>"''${XDG_RUNTIME_DIR:-/tmp}/nixos-record.lock"
       flock -w 5 9 || exit 1
 
-      # 输出统一到 ~/Videos/record/ —— 全部录制工具 (wf-recorder / GPU Screen
-      # Recorder / OBS) 共用这一个目录, 靠各自的文件名模式区分来源。
+      # 输出统一到 ~/Videos/record/ —— 录制工具 (wf-recorder / OBS) 共用
+      # 这一个目录, 靠各自的文件名模式区分来源。
       # 在 ~/Videos 之下, 故持久化自动覆盖 —— persist.nix 只声明 Videos 顶层,
       # 子目录随之落盘。
       DIR="$HOME/Videos/record"

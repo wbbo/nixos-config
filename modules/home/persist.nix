@@ -46,6 +46,10 @@
       # modules/home/default.nix 的 xdg.userDirs)。此前不在清单里, 一直落在
       # 临时根上 —— 重启即丢, 下载的东西需要及时挪走。
       "Downloads"
+      # 文档目录 —— Obsidian vault 所在 (~/Documents/Obsidian Vault)。笔记
+      # 不可重建, 重装/回滚必须保留。迁移要点: 先 cp -a 现有内容到
+      # /persist/home/<user>/Documents 再 rebuild (挂载后 @root 侧副本被遮蔽)。
+      "Documents"
       # 脚本安装工具 (claude/codex/cc-switch): 二进制 + 版本目录 + codex 登录态。
       # 重装(@root 重建)后保留, 补装用户服务"缺失才下载"不再触发, 消除下载依赖;
       # .claude 配置目录在上面已持久化。
@@ -72,12 +76,15 @@
       # - com.usebottles.bottles: Bottles wineprefix + 下载的 runner/组件
       #   (wineprefix 内含已装 Windows 应用, 无法重建, 必须持久化)
       # - com.tencent.WeChat: 微信聊天记录/登录态 (~300M)
-      # - com.dec05eba.gpu_screen_recorder: 录屏设置 (输出目录/编码器/回放参数)
+      # - io.typora.Typora: Markdown 编辑器 (偏好设置/授权/最近文件)
+      # - md.obsidian.Obsidian: 笔记应用 (应用配置/插件/索引; vault 本体
+      #   在用户自选路径, 该路径是否持久化需另行确认)
       # - com.obsproject.Studio: 场景集合/配置文件/输出设置
-      #   (以上两个录像工具的输出统一落在 ~/Videos/record, 该目录已随 Videos 持久化)
+      #   (录屏输出统一落在 ~/Videos/record, 该目录已随 Videos 持久化)
       ".var/app/com.usebottles.bottles"
       ".var/app/com.tencent.WeChat"
-      ".var/app/com.dec05eba.gpu_screen_recorder"
+      ".var/app/io.typora.Typora"
+      ".var/app/md.obsidian.Obsidian"
       ".var/app/com.obsproject.Studio"
       # Lutris 游戏启动器: ~/.local/share/lutris 含自行下载的 wine runner /
       # DXVK 与每个游戏的配置 (重下费时), ~/.config/lutris 为启动器设置。
