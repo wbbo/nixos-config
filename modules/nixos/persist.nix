@@ -23,12 +23,23 @@
 
     # libvirt 虚拟机数据 (qcow2 磁盘镜像 / nvram / swtpm 状态)。
     # 不持久化时重装 (@ 子卷重建) 会连虚拟机带盘一起丢失。
+    #
+    # ⚠ /persist/var/lib/libvirt 必须是**独立 btrfs 子卷**, 不是普通目录。
+    # snapper 保护整个 @persist, 而 btrfs 快照是浅快照、不递归包含嵌套子卷 ——
+    # 这是把虚拟机镜像排除在时间线快照外的唯一办法 (否则 38G 的 qcow2 会被
+    # 几十个快照反复钉住, 空间持续膨胀; 实测过一次: 22 个快照钉住 38GiB)。
+    # 重建该目录时**必须**用 `btrfs subvolume create`, 不可用 mkdir;
+    # 也不要在 disks.nix 里给它加递归快照。此事实无法在 nix 配置中表达,
+    # 只能靠本注释维系 (2026-09-11 命令式创建, top level 257)。
+    #   sudo btrfs subvolume create /persist/var/lib/libvirt
+    #
     # 迁移顺序不能反: 必须**先拷贝数据再 rebuild**。反了的话 boot 期
     # bind mount 会遮蔽 @ 上的旧数据, impermanence 发现源目录不存在
     # 会建一个空的 /persist/var/lib/libvirt, libvirt 看到空目录重建默认
     # 结构, 虚拟机在列表里"消失" (旧数据仍在 @ 上, 未删除, 但需手工找回)。
-    #   sudo mkdir -p /persist/var/lib/libvirt
-    #   sudo cp -a --reflink=auto /var/lib/libvirt/. /persist/var/lib/libvirt/
+    # 拷贝前先停 libvirtd (dnsmasq 占着 leases, 不停会挡 umount):
+    #   sudo btrfs subvolume create /persist/var/lib/libvirt
+    #   sudo cp -a /var/lib/libvirt/. /persist/var/lib/libvirt/
     "/var/lib/libvirt"
   ];
 
