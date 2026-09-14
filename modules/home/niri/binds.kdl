@@ -146,6 +146,14 @@ binds {
     // (曾误判为"不录指针", 教训见 record-toggle 注释)。
     Mod+Shift+S      { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim -c -g \"$(slurp)\" \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
     Mod+Ctrl+Shift+S { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim -c \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
+    // 冻结标注: Alt+Shift+S → noctalia 把当前画面原地冻结, 直接在屏幕上涂画+裁剪,
+    // 完成后复制或保存 (默认落 ~/Pictures/screenshot_<时间戳>.png, noctalia 设置
+    // shell.screenshot-directory 可改)。与上面 satty 链路互补:
+    //   satty = 弹独立编辑窗、标注工具全; 这个 = 原位画、所见即所得,
+    //   且冻结前可先在运行中的应用画面上 live 圈画 (演示场景, satty 做不到)。
+    // 注意与 satty 链路的输出路径不同 (satty → Pictures/screenshot/, 这个 →
+    // Pictures/ 顶层), 落盘目录可在 noctalia 设置 (Mod+Comma) 统一。
+    Alt+Shift+S      { spawn-sh "noctalia msg screenshot-annotate"; }
 
     // -------- 录屏 --------
     // Mod+Alt+R 切换 (开始/停止), 全屏 + 系统声音, 编码器按机器能力自动协商
