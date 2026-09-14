@@ -152,6 +152,57 @@ restore_adapt_and_report() {
 }
 trap restore_adapt_and_report EXIT
 
+# ---- HM 管理路径实体文件预检 ----
+# Home Manager 只对「跨代际内容有变化」的管理路径做链接检查, 因此在其管理
+# 路径下手动落下的实体文件是**定时炸弹**: 平时静默通过, 直到该文件内容因
+# 依赖升级等发生变化, HM 拒绝覆盖 → 激活失败 (半激活: NixOS 侧切换成功,
+# 用户态配置全部未生效, 退出码 4)。
+# 实例: 2026-09-09 一次排查中的 cp 在 ~/.config/systemd/user/ 埋下实体单元
+# 文件, 直到 09-14 nixpkgs 更新改变单元内容才引爆 —— 详见 CLAUDE.md
+# 「代码审查与修复记录」。同类问题在本仓库已发生 4 次 (fonts/fish/fcitx5
+# 各自用 force = true 兜住, 而 systemd.user.services 没有 force 选项)。
+# 这里用当前代际的 home-files 树做期望清单提前曝光; **只告警不中止** ——
+# 文件内容未变时本次构建本可成功, 不该被预检拦下。
+# 局限: 只覆盖当前代际已在管的路径; 新代际新增路径若撞上实体文件仍由 HM
+# 自行报错 (那时至少 trap 已保证仓库不被污染)。
+target_home() {
+  local u="${SUDO_USER:-}"
+  if [ -n "$u" ] && [ "$u" != "root" ]; then
+    getent passwd "$u" 2>/dev/null | cut -d: -f6
+  else
+    printf '%s\n' "$HOME"
+  fi
+}
+
+preflight_hm_clobber() {
+  local h hf rel n=0
+  h="$(target_home)"
+  if [ -z "$h" ] || [ ! -d "$h" ]; then
+    return 0
+  fi
+  hf="$(readlink -f "$h/.local/state/home-manager/gcroots/current-home/home-files" 2>/dev/null)" || true
+  if [ -z "$hf" ] || [ ! -d "$hf" ]; then
+    return 0
+  fi
+  while IFS= read -r -d '' f; do
+    rel="${f#"$hf/"}"
+    if [ -L "$h/$rel" ]; then continue; fi  # 正常: HM 的符号链接
+    if [ ! -e "$h/$rel" ]; then continue; fi # 不存在: 无冲突
+    if [ "$n" -eq 0 ]; then
+      warn "HM 管理路径下出现实体文件 (定时炸弹, 见 CLAUDE.md 代码审查记录):"
+    fi
+    n=$((n + 1))
+    warn "  $h/$rel"
+  done < <(find "$hf" ! -type d -print0 2>/dev/null || true)
+  if [ "$n" -gt 0 ]; then
+    warn "共 $n 个。**内容跨代际变化时** HM 才拒绝覆盖导致激活失败, 平时静默 ——"
+    warn "本次构建仍可能成功。建议顺手清掉 (确认内容后):"
+    warn "  mv <该文件> <该文件>.stale-\$(date +%Y%m%d)   # HM 随即重建符号链接"
+  fi
+}
+
+preflight_hm_clobber
+
 bash scripts/adapt-hardware.sh
 
 HOST_NAME="$(host_name)"

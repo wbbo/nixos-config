@@ -339,3 +339,42 @@ home-manager-restart) 每次 switch 跨实例 restart 触发重跑,
 activation 失败 exit 4) —— `persistMigrate` 激活钩子自动迁移 + 一次性手工收尾。
 2026-09-05 起钩子退役: rime 持久化已从「2 目录 + 2 文件 bind」整并为一个目录级
 bind (`.local/share/fcitx5/rime`), 文件级 bind 竞态不复存在, 详见 modules/home/persist.nix。
+
+2026-09-14 HM 激活失败的根因定位 (journal 逐条回溯 + 本机实测) —— 实体文件定时炸弹:
+
+**现象**: `./build.sh` **半激活失败** —— NixOS 侧切换成功, 只有
+`home-manager-wbb.service` 报 `Existing file '~/.config/systemd/user/
+cc-switch-install.service' would be clobbered`, `switch-to-configuration` 退出码 4,
+**用户态配置全部未生效, 而系统看起来"没报大错"**。
+
+**根因**: journal 显示 2026-09-09 18:24:28 排查**当时另一次** HM 激活失败
+(`Failed to perform post-reload tasks` → `timed out waiting on channel`) 时,
+从仓库目录用 sudo 执行了一条把单元文件从 nix store `cp` 到 `~/.config/systemd/user/`
+的命令以便对照检查 —— 该路径 HM 用**符号链接**管理, `cp` 落地的是**实体文件**,
+HM 拒绝覆盖 (这是保护手写单元不被误删的机制)。
+
+**为什么潜伏 5 天才引爆** (最反直觉的一环): HM 的链接检查是**增量**的 —— 只对
+「跨代际内容有变化」的路径执行。该单元内容直到 09-14 才变动:
+`bb33b54` 更新 flake inputs → nixpkgs rev 变更 → `install-cc-switch` 的
+`writeShellScript` 所引用依赖 (curl/tar/gzip/zstd/jq) 的 store 路径全变 → 新 hash →
+单元内容变化 → 12:12 首次构建尝试重链, 撞上实体文件。**触发条件是「内容变化」而非
+「文件存在」**, 所以它本质是定时炸弹: 埋下后静默, 直到某次 `nix flake update` 后的
+第一次构建才炸。旁证: 09-10 / 09-11 各有 8 / 12 次 HM 激活**全部成功**,
+09-10~09-13 零失败。
+
+**同类问题第 4 次**: `fonts.nix:14`(对照实验留下的同名普通文件) /
+`fish.nix:20`(fish 首启自动生成的 config.fish) / `fcitx5.nix:132`(GUI 手动生成的
+profile) 各有一条 `force = true` 记录同一模式。区别在于 **`systemd.user.services`
+没有 `force` 选项**, 这次只能手工清掉。
+
+**防护**:
+- `build.sh` 增 `preflight_hm_clobber` —— 用当前代际的 `home-files` 树做期望清单,
+  在 switch 前报出 HM 管理路径下的实体文件 (实测 12ms / 87 条目)。**只告警不中止**:
+  内容未变时本次构建本可成功, 不该被预检拦下。局限: 只覆盖当前代际已在管的路径,
+  新代际新增路径撞上实体文件仍由 HM 自行报错。
+- **排查纪律**: 查看 store 里的文件内容用 `cat` 直接读, 或落到 `/tmp`;
+  **绝不要 `cp` 到 `$HOME` 下的 HM 管理路径** —— 这次的 `cp` 就是为了"方便反复看"。
+- 同批修掉的相邻隐患: `build.sh` 的 adapt/restore 改为 `trap ... EXIT` 兜底 ——
+  原先 `restore_adapt` 是 switch 之后的显式调用, 而脚本是 `set -euo pipefail`,
+  中间任何失败都会跳过还原, 把本机硬件值 (hostPlatform / swapfile / resume_offset)
+  留在工作区, 一旦顺手 commit 就进了分发模板 (这次失败即实例)。
