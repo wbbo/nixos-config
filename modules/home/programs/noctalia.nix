@@ -267,10 +267,10 @@ in {
     password_style = "random"
 
     # 截图输出 (Mod+Shift+S 区域 / Alt+Shift+S 冻结标注 / 控制中心按钮共用):
-    # 目录与命名沿用原 satty 链路的风格 (satty-config.toml 的
-    # output-filename = ~/Pictures/screenshot/%Y-%m-%d_%H-%M-%S.png) ——
-    # 2026-09-14 截图实现整体切到 noctalia 原生后, 产物路径与命名规则不变,
-    # 历史截图与新截图仍落在同一目录。区域截图会自动加 -region 后缀。
+    # 目录与命名沿用原 satty 链路的风格 (~/Pictures/screenshot/ +
+    # %Y-%m-%d_%H-%M-%S.png) —— 2026-09-14 截图整体切到 noctalia 原生后,
+    # 产物路径与命名规则保持不变, 历史截图与新截图仍落在同一目录。
+    # 区域截图会自动加 -region 后缀以便区分来源。
     # 注意段名是 [shell.screenshot] 子表 —— 写在 [shell] 平层 (无论
     # screenshot_directory 还是 screenshot-directory) 会被判 unknown setting
     # (noctalia config validate 实测)。noctalia 自动补 .png 扩展名。
