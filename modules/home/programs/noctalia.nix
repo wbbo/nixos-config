@@ -274,9 +274,12 @@ in {
     # 注意段名是 [shell.screenshot] 子表 —— 写在 [shell] 平层 (无论
     # screenshot_directory 还是 screenshot-directory) 会被判 unknown setting
     # (noctalia config validate 实测)。noctalia 自动补 .png 扩展名。
-    # directory 为空 = XDG Pictures 目录 (实测落 ~/Pictures/ 顶层)。
+    # directory 用 ~ 形式: noctalia 支持并在写入时展开为 $HOME (实测 —— 用
+    # ~ 设壁纸后回读得到绝对路径), 比写死 /home/<user> 更短、不嵌用户名,
+    # 也与原 satty 配置的写法一致 (satty-config 的 output-filename 同样用 ~)。
+    # 空值 = XDG Pictures 目录 (实测落 ~/Pictures/ 顶层)。
     [shell.screenshot]
-    directory = "/home/${mainUser}/Pictures/screenshot"
+    directory = "~/Pictures/screenshot"
     filename_pattern = "%Y-%m-%d_%H-%M-%S"
     save_to_file = true
     copy_to_clipboard = true
