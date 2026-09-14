@@ -20,6 +20,16 @@
   #   sudo mkdir -p /persist/var/lib/nixos && sudo cp -a /var/lib/nixos/. /persist/var/lib/nixos/
   environment.persistence."/persist".directories = [
     "/var/lib/nixos"
+
+    # libvirt 虚拟机数据 (qcow2 磁盘镜像 / nvram / swtpm 状态)。
+    # 不持久化时重装 (@ 子卷重建) 会连虚拟机带盘一起丢失。
+    # 迁移顺序不能反: 必须**先拷贝数据再 rebuild**。反了的话 boot 期
+    # bind mount 会遮蔽 @ 上的旧数据, impermanence 发现源目录不存在
+    # 会建一个空的 /persist/var/lib/libvirt, libvirt 看到空目录重建默认
+    # 结构, 虚拟机在列表里"消失" (旧数据仍在 @ 上, 未删除, 但需手工找回)。
+    #   sudo mkdir -p /persist/var/lib/libvirt
+    #   sudo cp -a --reflink=auto /var/lib/libvirt/. /persist/var/lib/libvirt/
+    "/var/lib/libvirt"
   ];
 
   systemd.tmpfiles.rules = [
