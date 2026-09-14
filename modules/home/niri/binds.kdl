@@ -148,7 +148,8 @@ binds {
     Mod+Ctrl+Shift+S { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim -c \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
 
     // -------- 录屏 --------
-    // Mod+Alt+R 切换 (开始/停止), 全屏 + 系统声音, NVENC 硬件编码。
+    // Mod+Alt+R 切换 (开始/停止), 全屏 + 系统声音, 编码器按机器能力自动协商
+    // (NVENC → VAAPI → libx264 降级, 协商结果每次开机缓存; 见 record-toggle 脚本)。
     // 封装在 record-toggle 脚本 (modules/home/niri/default.nix): 负责进程判据、
     // SIGINT 收尾、通知反馈; 输出 ~/Videos/record/rec-<时间戳>.mkv (与 OBS 共用该目录)。
     // 注: Mod+Shift+R 已被 switch-preset-window-height 占用, 故用 Mod+Alt 系列。

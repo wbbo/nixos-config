@@ -134,12 +134,51 @@ let
 
       OUT="$DIR/rec-$(date +%F_%H-%M-%S).mkv"
       echo "$OUT" > "$STATE"
-      notify-send -t 2000 "开始录屏" "输出: $(basename "$OUT") (再按 Mod+Alt+R 停止)"
+
+      # ---- 编码器协商 (按机器能力降级, 结果缓存至本次开机) ----
+      # 本脚本是分发模板共享代码, 不同机器硬件不同: RTX 机器 NVENC 最快;
+      # Intel 核显机器 VAAPI (本机 960M 因 Maxwell 不受驱动支持而刻意闲置,
+      # 见 hosts/default/local.nix —— NVENC 依赖专有驱动, 在这类机器上
+      # cuInit 报 CUDA_ERROR_NO_DEVICE, 曾致 Mod+Alt+R 弹出"开始录屏"通知
+      # 却录不到任何东西); 都没有则 libx264 软编兜底。
+      # 两段式判定:
+      # 1. 前置条件零成本筛 —— NVENC 看 nvidia 内核模块是否在载 (专有驱动
+      #    才提供 NVENC), VAAPI 看渲染节点是否存在;
+      # 2. 命中者用 timeout 2.5s 实录探测确认 —— rc=124 (被 timeout 杀掉,
+      #    即 2.5s 内一直在正常录制) = 可用; 提前自行退出 = 不可用。
+      #    ⚠ 不能用「存活 N 秒」做判据: nvenc 失败并非瞬时 —— cuInit 报错
+      #    后要 ~4s 才退出 (实测), 存活性判据会把它误判成可用并缓存
+      #    (2026-09-14 实际踩过: 缓存了 nvenc, 之后每次录制全部失败)。
+      # 探测进程必须带 9>&-, 否则会把 flock 带走 (见下方同一个坑)。
+      ENCFILE="''${XDG_RUNTIME_DIR:-/tmp}/nixos-record.encoder"
+      ENC="$(cat "$ENCFILE" 2>/dev/null || true)"
+      if [ -z "$ENC" ]; then
+        ENC=libx264  # 兜底
+        for cand in h264_nvenc h264_vaapi; do
+          case "$cand" in
+            h264_nvenc) grep -q '^nvidia' /proc/modules 2>/dev/null || continue ;;
+            h264_vaapi) ls /dev/dri/renderD128 >/dev/null 2>&1 || continue ;;
+          esac
+          PROBE="$DIR/.enc-probe.mkv"
+          rm -f "$PROBE"
+          rc=0
+          timeout 2.5 wf-recorder -c "$cand" -f "$PROBE" 9>&- >/dev/null 2>&1 || rc=$?
+          rm -f "$PROBE"
+          if [ "$rc" = 124 ]; then
+            ENC="$cand"
+            break
+          fi
+        done
+        echo "$ENC" > "$ENCFILE"
+      fi
+
+      notify-send -t 2000 "开始录屏" \
+        "输出: $(basename "$OUT") · 编码器: $ENC (再按 Mod+Alt+R 停止)"
       # 9>&-: 关闭锁 fd —— 否则 wf-recorder 继承 fd 9 把锁一直带到录制结束, 期间
       # 每次按键都会卡在 flock -w 5 上然后 exit 1 静默退出 (表现为"按了没反应,
       # 停不下来"; 实测一段 1h46m 的录制就是这么停不掉的)。eye-care 的 wlsunset
       # 踩过同一个坑, 那里已用 9>&-。
-      exec wf-recorder -c h264_nvenc -a -f "$OUT" 9>&-
+      exec wf-recorder -c "$ENC" -a -f "$OUT" 9>&-
     '';
   };
 in
