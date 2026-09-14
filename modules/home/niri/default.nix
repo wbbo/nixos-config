@@ -73,7 +73,8 @@ let
     '';
   };
 
-  # 录屏切换 (Mod+Alt+R): 全屏 + 系统声音, NVENC 硬件编码。
+  # 录屏切换 (Mod+Alt+R): 全屏 + 系统声音, 编码器按机器能力协商
+  # (见 record-encoder-probe —— 会话启动预热, 按键到开录零延迟)。
   # 状态判据 = wf-recorder 进程是否存在; 输出路径记在 XDG_RUNTIME_DIR 的状态
   # 文件里, 停止时据此报出文件名。
   # 注: wf-recorder 是前台阻塞程序, 靠 SIGINT 收尾并写索引, 不能像截图那样
@@ -86,8 +87,9 @@ let
   # 即始终把鼠标指针画进画面, 且没有开关能关掉 (gsr 则提供 -cursor yes|no)。
   # 曾因"源码里搜不到 cursor 字样"误判为不录指针 —— 位置实参的字面量搜不到,
   # 字符串搜索只能证明存在、不能证明不存在。
-  # 编码: 4090 的 h264_nvenc (nixpkgs 的 ffmpeg 已启用 nvenc)。画质不满意可加
-  # -p preset=p5 -p cq=23 (编码器参数经 -p key=value 透传)。
+  # 编码器: 由 record-encoder-probe 协商 (NVENC → VAAPI → libx264 兜底), 结果
+  # 缓存在 XDG_RUNTIME_DIR。画质不满意可加 -p preset=p5 -p cq=23
+  # (编码器参数经 -p key=value 透传)。
   # 输出用 .mkv (Matroska) 而非 .mp4: mp4 的索引 (moov) 只在**正常收尾**时才写
   # 入文件末尾, 崩溃/断电/被 kill 都留下一个没索引、任何播放器都打不开的文件
   # (实测: 一段 1h46m 的 4K 录制因此差点全废, 靠 /proc/<pid>/fd 才抢回来)。
@@ -98,6 +100,56 @@ let
   # mkv 6.3MB 落盘 → h264 可解码播放; mp4 7.6MB 落盘 → "moov atom not found"。
   # 分享需要 mp4 时 ffmpeg -i in.mkv -c copy out.mp4 无损转一下即可。
   # wf-recorder 按扩展名选封装器 (-f out.mkv → matroska)。
+  # 编码器协商 (独立脚本): 由 niri spawn-at-startup 在**会话启动时预热**, 结果
+  # 缓存到 XDG_RUNTIME_DIR; record-toggle 只读缓存, 缺失时才回退到这里现协商。
+  # 拆成独立脚本就是为了把协商移出按键热路径 —— 实录探测要 2.5s, 留在按键
+  # 路径上会让开机后第一次录制有明显的"按了没反应"(2026-09-14 实测)。
+  #
+  # 两段式判定:
+  #   1. 前置条件零成本筛 (瞬时):
+  #      NVENC — nvidia 内核模块是否在载 (NVENC 由专有驱动提供);
+  #      VAAPI — vainfo --display drm 是否报 H.264 编码 entrypoint。
+  #              --display drm 直连渲染节点, 不需要屏幕捕获也不用会话环境;
+  #              只查渲染节点存在是不够的 (nouveau 之类有节点但无编码能力)。
+  #   2. 命中者用 timeout 2.5s 实录确认 —— rc=124 (被 timeout 杀掉, 即 2.5s
+  #      内一直在正常录制) = 可用; 提前自行退出 = 不可用。
+  # ⚠ 不能用「存活 N 秒」做判据: nvenc 失败并非瞬时 —— cuInit 报错后要 ~4s
+  # 才退出 (实测), 存活性判据会把它误判成可用并缓存 (同日实际踩过)。
+  # 探测进程必须带 9>&- (理由见 record-toggle 内的 flock 坑说明)。
+  record-encoder-probe = pkgs.writeShellApplication {
+    name = "record-encoder-probe";
+    runtimeInputs = [ pkgs.wf-recorder pkgs.coreutils pkgs.gnugrep pkgs.libva-utils ];
+    text = ''
+      set -uo pipefail
+      ENCFILE="''${XDG_RUNTIME_DIR:-/tmp}/nixos-record.encoder"
+      if [ -s "$ENCFILE" ]; then
+        exit 0
+      fi
+      DIR="$HOME/Videos/record"
+      mkdir -p "$DIR"
+      ENC=libx264  # 兜底
+      for cand in h264_nvenc h264_vaapi; do
+        case "$cand" in
+          h264_nvenc)
+            grep -q '^nvidia' /proc/modules 2>/dev/null || continue ;;
+          h264_vaapi)
+            vainfo --display drm 2>/dev/null \
+              | grep -qE 'VAProfileH264.*VAEntrypointEncSlice' || continue ;;
+        esac
+        PROBE="$DIR/.enc-probe.mkv"
+        rm -f "$PROBE"
+        rc=0
+        timeout 2.5 wf-recorder -c "$cand" -f "$PROBE" 9>&- >/dev/null 2>&1 || rc=$?
+        rm -f "$PROBE"
+        if [ "$rc" = 124 ]; then
+          ENC="$cand"
+          break
+        fi
+      done
+      echo "$ENC" > "$ENCFILE"
+    '';
+  };
+
   record-toggle = pkgs.writeShellApplication {
     name = "record-toggle";
     runtimeInputs = [ pkgs.wf-recorder pkgs.libnotify pkgs.coreutils pkgs.procps ];
@@ -135,41 +187,20 @@ let
       OUT="$DIR/rec-$(date +%F_%H-%M-%S).mkv"
       echo "$OUT" > "$STATE"
 
-      # ---- 编码器协商 (按机器能力降级, 结果缓存至本次开机) ----
-      # 本脚本是分发模板共享代码, 不同机器硬件不同: RTX 机器 NVENC 最快;
-      # Intel 核显机器 VAAPI (本机 960M 因 Maxwell 不受驱动支持而刻意闲置,
-      # 见 hosts/default/local.nix —— NVENC 依赖专有驱动, 在这类机器上
-      # cuInit 报 CUDA_ERROR_NO_DEVICE, 曾致 Mod+Alt+R 弹出"开始录屏"通知
-      # 却录不到任何东西); 都没有则 libx264 软编兜底。
-      # 两段式判定:
-      # 1. 前置条件零成本筛 —— NVENC 看 nvidia 内核模块是否在载 (专有驱动
-      #    才提供 NVENC), VAAPI 看渲染节点是否存在;
-      # 2. 命中者用 timeout 2.5s 实录探测确认 —— rc=124 (被 timeout 杀掉,
-      #    即 2.5s 内一直在正常录制) = 可用; 提前自行退出 = 不可用。
-      #    ⚠ 不能用「存活 N 秒」做判据: nvenc 失败并非瞬时 —— cuInit 报错
-      #    后要 ~4s 才退出 (实测), 存活性判据会把它误判成可用并缓存
-      #    (2026-09-14 实际踩过: 缓存了 nvenc, 之后每次录制全部失败)。
-      # 探测进程必须带 9>&-, 否则会把 flock 带走 (见下方同一个坑)。
+      # ---- 编码器 ----
+      # 正常路径: niri spawn-at-startup 已在会话启动时预热协商结果, 此处只读
+      # 缓存 → 按键到开录**零延迟**。缓存缺失 (会话被外部工具拉起 / 预热失败)
+      # 时回退现协商一次, 代价是这一次按键多等 ~2.5s。
+      # 协商的全部逻辑与判据 (前置条件筛 + timeout 实录确认) 见
+      # record-encoder-probe, 此处不重复。
       ENCFILE="''${XDG_RUNTIME_DIR:-/tmp}/nixos-record.encoder"
       ENC="$(cat "$ENCFILE" 2>/dev/null || true)"
       if [ -z "$ENC" ]; then
-        ENC=libx264  # 兜底
-        for cand in h264_nvenc h264_vaapi; do
-          case "$cand" in
-            h264_nvenc) grep -q '^nvidia' /proc/modules 2>/dev/null || continue ;;
-            h264_vaapi) ls /dev/dri/renderD128 >/dev/null 2>&1 || continue ;;
-          esac
-          PROBE="$DIR/.enc-probe.mkv"
-          rm -f "$PROBE"
-          rc=0
-          timeout 2.5 wf-recorder -c "$cand" -f "$PROBE" 9>&- >/dev/null 2>&1 || rc=$?
-          rm -f "$PROBE"
-          if [ "$rc" = 124 ]; then
-            ENC="$cand"
-            break
-          fi
-        done
-        echo "$ENC" > "$ENCFILE"
+        record-encoder-probe || true
+        ENC="$(cat "$ENCFILE" 2>/dev/null || true)"
+      fi
+      if [ -z "$ENC" ]; then
+        ENC=libx264
       fi
 
       notify-send -t 2000 "开始录屏" \
@@ -183,7 +214,7 @@ let
   };
 in
 {
-  home.packages = [ niri-apply-resolution eye-care record-toggle pkgs.xwayland-satellite ];
+  home.packages = [ niri-apply-resolution eye-care record-toggle record-encoder-probe pkgs.xwayland-satellite ];
 
   # force = true: 接管首启自动生成的官方默认 config.kdl
   # (全新安装首启 niri 会生成默认模板, 非 HM 链接; 无 force 时 HM clobber

@@ -96,6 +96,10 @@ spawn-at-startup "noctalia"
 spawn-at-startup "niri-apply-resolution"
 // 对齐护眼状态: 修复 effects.kdl 链接 (若缺失) + 同步 wlsunset 色温
 spawn-at-startup "eye-care" "--sync"
+// 预热录屏编码器协商 (NVENC/VAAPI/libx264), 结果缓存到 XDG_RUNTIME_DIR ——
+// Mod+Alt+R 的按键热路径只读缓存, 故开机后第一次录制也是零延迟启动
+// (探测本身要实录 2.5s, 留在按键路径上会有明显"按了没反应")。
+spawn-at-startup "record-encoder-probe"
 // polkit 认证代理: 已移交 Noctalia 内建 (config.toml [shell] polkit_agent=true,
 // 见 noctalia.nix) —— 弹窗风格统一, 且不再跑 polkit-gnome 这个 GTK 进程。
 // 注意: 整个会话只能有一个 agent, 故此处不再 spawn 任何外部认证代理
