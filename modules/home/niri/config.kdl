@@ -14,8 +14,9 @@ include "rule.kdl"
 include "~/.config/niri/effects.kdl"
 
 // ================ 截图路径 ================
-// niri 内置 screenshot action 的落盘位置。注意与 Mod+Shift+S / Mod+Ctrl+Shift+S
-// 无关 —— 那两条走 grim|satty 管道, 保存路径由 satty 界面里决定 (binds.kdl)。
+// niri 内置 screenshot action 的落盘位置。注意与 Mod+Shift+S / Alt+Shift+S
+// 无关 —— 前者走 grim|satty 管道 (保存路径由 satty 界面决定), 后者走 noctalia
+// 冻结标注 (路径由 [shell.screenshot] 配置, 见 noctalia.nix); 都不经此处。
 // 归入 Pictures/ 与壁纸库 (Pictures/Wallpapers) 并列; 持久化由 persist.nix 的
 // "Pictures" 条目覆盖, 不需要单独的 bind 条目。
 screenshot-path "~/Pictures/screenshot/Screenshot from %Y-%m-%d %H-%M-%S.png"
