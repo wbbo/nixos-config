@@ -133,34 +133,28 @@ binds {
     Mod+MouseBack    { focus-window-down; }
 
     // -------- 截图 --------
-    // 区域: Mod+Shift+S → slurp 框选 → 先复制进剪贴板, 再进 satty 标注
-    // 链路: 截图落临时文件 → wl-copy 复制 → satty 交互标注 (Ctrl+S 存到
-    // ~/Pictures/screenshot/) → satty 退出后删临时文件。
-    // 复制排在 satty 之前: 这样标注中途直接关窗, 原图也已在剪贴板里不丢。
-    // (satty 已升级 0.22.0 并开启 auto-copy: 标注改动即自动复制, 见 satty-config.toml)
-    // grim -c: 把鼠标指针合成进截图。wlr-screencopy 协议里光标是**选择性**的
-    // (capture_output 的 overlay_cursor 参数, 传 0 就不画), grim 默认传 0,
-    // 所以必须显式加 -c 才有指针。
-    // 对照: wf-recorder 在同一个调用点**硬编码传 1**, 所以录屏里一直有指针
-    // (曾误判为"不录指针", 教训见 record-toggle 注释)。
-    // repeat=false: niri 键位默认按住会重复触发, 而这种 spawn 型动作每次都会
-    // 起一个新进程 —— 按住 ~0.6s 就 spawn 第二次 (实测 journal: 同一秒出现两个
-    // app-niri-sh-* scope), 表现为"按一次弹出多个 satty"。cooldown-ms 再挡一道
-    // 重复事件 (抑制期内直接忽略)。
-    Mod+Shift+S      repeat=false cooldown-ms=400 { spawn "sh" "-c" "f=$(mktemp /tmp/satty-shot-XXXXXX.png) && grim -c -g \"$(slurp)\" \"$f\" && wl-copy < \"$f\" && satty -f \"$f\"; rm -f \"$f\""; }
-    // 冻结标注: Alt+Shift+S → noctalia 把当前画面原地冻结, 直接在屏幕上涂画+裁剪,
-    // 完成后复制或保存。与区域 satty 链路互补: satty 是"截完弹独立编辑窗口",
-    // 这个是原位冻结、所见即所得, 且冻结前可先在运行中的应用画面上 live 圈画
-    // (演示场景, satty 做不到)。noctalia 5.1 的标注工具本身已相当完整。
-    // 落盘已与 satty 统一: ~/Pictures/screenshot/ + %Y-%m-%d_%H-%M-%S 命名
-    // (noctalia 配置的 [shell.screenshot], 见 noctalia.nix)。
+    // 两条都走 noctalia 内建截图 (screencopy 直连, 无外部进程依赖)。
+    // 输出统一由 noctalia.nix 的 [shell.screenshot] 管: 落 ~/Pictures/screenshot/
+    // + %Y-%m-%d_%H-%M-%S 命名 (区域截图自动加 -region 后缀, 便于区分来源)。
+    // 区域:     Mod+Shift+S → 框选 (默认选区前先冻结画面) → 标注器 → 保存/复制
+    // 冻结标注: Alt+Shift+S → 整屏原地冻结 → 原位涂画/裁剪 → 保存/复制;
+    //           冻结前还可先在运行中的应用画面上 live 圈画 (演示场景, 区域模式做不到)。
     //
-    // ★ 原有的 Mod+Ctrl+Shift+S (grim 全屏 → satty) 已于 2026-09-14 移除:
-    //   该场景已被冻结标注完整覆盖 —— 冻结标注本身就是"抓整屏 → 标注", 且
-    //   多一步可裁剪、工具更丰富、支持 live 圈画。两个"整屏截图+标注"入口并存
-    //   只会造成选择困难, 故收敛为一条。区域截图 (Mod+Shift+S) 保留: "先用
-    //   slurp 精确框选再标注"的流程比"先冻结整屏再裁"更直接。
+    // repeat=false: niri 键位默认按住会重复触发, 而 spawn-sh 型动作为每次起
+    // 新进程 —— 实测同一次按键在 1 秒内产生两个 app-niri-sh-* scope, 表现为
+    // "按一次弹出多个窗口"。cooldown-ms 再挡一道重复事件 (抑制期内直接忽略)。
+    Mod+Shift+S      repeat=false cooldown-ms=400 { spawn-sh "noctalia msg screenshot-region"; }
     Alt+Shift+S      repeat=false cooldown-ms=400 { spawn-sh "noctalia msg screenshot-annotate"; }
+    //
+    // ★ 历史 (2026-09-14 收敛): 这里原有两套 grim|slurp|satty 链路 ——
+    //   Mod+Shift+S (slurp 框选) 与 Mod+Ctrl+Shift+S (grim 全屏)。
+    //   全屏那条先移除 (其场景被冻结标注完整覆盖); 区域这条随后也切到 noctalia,
+    //   理由是 noctalia 原生已覆盖"框选 + 标注"全流程, 省掉 grim/slurp/satty
+    //   三个外部依赖。区域截图需配合 noctalia.nix 的 annotate = true
+    //   (否则框选完直接保存, 不进标注器)。
+    //   失去的特性: satty 链路在进标注器**之前**就已 wl-copy, 标注中途关窗
+    //   原图也不丢; noctalia 是完成时才复制。若日后需要这个抗中断特性, 可从
+    //   git 历史 (fa7ceb5 之前) 找回原绑定。
 
     // -------- 录屏 --------
     // Mod+Alt+R 切换 (开始/停止), 全屏 + 系统声音, 编码器按机器能力自动协商

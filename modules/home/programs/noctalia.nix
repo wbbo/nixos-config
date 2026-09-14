@@ -266,10 +266,11 @@ in {
     # 注意: UI 选项名 filled-circles/random-icons 是翻译键, 不是配置值)。
     password_style = "random"
 
-    # 截图输出 (Alt+Shift+S 冻结标注 / Mod+S 控制中心截图按钮共用此配置):
-    # 目录与文件名模式对齐 satty (satty-config.toml 的
-    # output-filename = ~/Pictures/screenshot/%Y-%m-%d_%H-%M-%S.png),
-    # 两条截图链路落盘到同一目录、同一命名风格。
+    # 截图输出 (Mod+Shift+S 区域 / Alt+Shift+S 冻结标注 / 控制中心按钮共用):
+    # 目录与命名沿用原 satty 链路的风格 (satty-config.toml 的
+    # output-filename = ~/Pictures/screenshot/%Y-%m-%d_%H-%M-%S.png) ——
+    # 2026-09-14 截图实现整体切到 noctalia 原生后, 产物路径与命名规则不变,
+    # 历史截图与新截图仍落在同一目录。区域截图会自动加 -region 后缀。
     # 注意段名是 [shell.screenshot] 子表 —— 写在 [shell] 平层 (无论
     # screenshot_directory 还是 screenshot-directory) 会被判 unknown setting
     # (noctalia config validate 实测)。noctalia 自动补 .png 扩展名。
@@ -279,6 +280,11 @@ in {
     filename_pattern = "%Y-%m-%d_%H-%M-%S"
     save_to_file = true
     copy_to_clipboard = true
+    # annotate: 截完先进标注器再保存/复制 —— Mod+Shift+S 区域截图靠它补齐
+    # "框选 + 标注" 的完整流程 (satty 链路退役后由它承接)。
+    # ⚠ 这是**全局**开关, 对所有截图入口生效 (含控制中心按钮与
+    # screenshot-fullscreen), 没有 per-command 覆盖。
+    annotate = true
 
     # ============================================================
     # 会话菜单 (binds.kdl Mod+Alt+L → panel-toggle session)
