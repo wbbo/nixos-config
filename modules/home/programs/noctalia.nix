@@ -1,5 +1,5 @@
 # noctalia 配置 —— 壁纸 (官方插件) + 顶栏样式 + GTK 明暗同步
-{ pkgs, noctalia, mainUser, lib, ... }:
+{ pkgs, noctaliaPkg, mainUser, lib, ... }:
 let
   # GTK 明暗跟随 Noctalia 主题模式 (由 config.toml [hooks].theme_mode_changed 触发)
   # NixOS 打包: store 可执行, home.packages 装到 ~/.nix-profile/bin/theme-sync
@@ -166,7 +166,7 @@ in {
 
   home.activation.createWallpaperDir = ''
     mkdir -p /home/${mainUser}/Pictures/Wallpapers/video
-    cp -n ${noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default}/share/noctalia/assets/noctalia-wallpaper.png /home/${mainUser}/Pictures/Wallpapers/ || true
+    cp -n ${noctaliaPkg}/share/noctalia/assets/noctalia-wallpaper.png /home/${mainUser}/Pictures/Wallpapers/ || true
   '';
 
   xdg.configFile."noctalia/config.toml".text = ''

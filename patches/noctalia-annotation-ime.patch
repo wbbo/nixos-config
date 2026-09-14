@@ -1,0 +1,658 @@
+diff --git a/src/app/application.h b/src/app/application.h
+index f9904c6..e3a1ccd 100644
+--- a/src/app/application.h
++++ b/src/app/application.h
+@@ -264,7 +264,8 @@ private:
+   DependencyService m_dependencyService;
+   GammaService m_gammaService;
+   ScreenshotService m_screenshotService{
+-      m_wayland, m_compositorPlatform, m_configService, m_notificationManager, &m_clipboardService
++      m_wayland, m_compositorPlatform, m_configService, m_notificationManager, &m_clipboardService,
++      &m_textInputService
+   };
+   std::unique_ptr<MprisService> m_mprisService;
+   std::unique_ptr<PowerProfilesService> m_powerProfilesService;
+diff --git a/src/capture/annotation_document.h b/src/capture/annotation_document.h
+index 3a552fc..bafb5a9 100644
+--- a/src/capture/annotation_document.h
++++ b/src/capture/annotation_document.h
+@@ -56,6 +56,14 @@ namespace capture {
+     AnnotationColor fill{.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 0.0F}; // Rectangle/Circle; a == 0 means no fill
+     std::vector<AnnotationPoint> points;
+     std::string text; // Text: content; Numbering: label
++    // Text: wrap width in canvas px (0 = unwrapped). Set at creation from the anchor
++    // to the canvas edge so long text wraps at the capture border instead of running
++    // past it. Consumed by Pango both when measuring and when rendering.
++    double textWrapWidth = 0.0;
++    // Editor-only state, never folded into the committed image: the Text tool's
++    // select-all flag (Ctrl+A), drawn as a highlight behind the glyphs and cleared
++    // before the annotation is committed.
++    bool textSelected = false;
+   };
+ 
+   struct AnnotationRect {
+diff --git a/src/capture/annotation_overlay.cpp b/src/capture/annotation_overlay.cpp
+index d0fe592..fc66ebe 100644
+--- a/src/capture/annotation_overlay.cpp
++++ b/src/capture/annotation_overlay.cpp
+@@ -29,6 +29,7 @@
+ #include "ui/palette.h"
+ #include "ui/style.h"
+ #include "wayland/layer_surface.h"
++#include "wayland/text_input_service.h"
+ #include "wayland/wayland_connection.h"
+ #include "wayland/wayland_seat.h"
+ 
+@@ -152,6 +153,34 @@ namespace capture {
+       cairo_restore(cr);
+     }
+ 
++    // Keeps a wrapped text block inside the canvas vertically: wrapping already caps the
++    // width, but the block still grows downwards, and once it passes the bottom edge the
++    // glyphs spill outside the capture. Slide the anchor up so the whole block stays
++    // visible (the way a text editor scrolls), and never let it escape past the top.
++    //
++    // Anchors are canvas-local (onCanvasPress subtracts canvasRect), so the bounds are
++    // [0, height] — using the rect's absolute y would shove the text down by the canvas
++    // offset, which is non-zero in the centred Image layout used by region captures.
++    void clampTextAnchorToCanvas(Annotation& annotation, double canvasHeight) {
++      if (annotation.tool != AnnotationTool::Text || annotation.points.empty()) {
++        return;
++      }
++      const AnnotationRect text = measureText(annotation);
++      if (text.height <= 0.0 || canvasHeight <= 0.0) {
++        return;
++      }
++      // text.y is the block's top edge in canvas coordinates: the anchor sits on the first
++      // line's baseline, so the block starts above it.
++      double shift = 0.0;
++      if (text.y + text.height > canvasHeight) {
++        shift = canvasHeight - (text.y + text.height);
++      }
++      if (text.y + shift < 0.0) {
++        shift = -text.y;
++      }
++      annotation.points.front().y += shift;
++    }
++
+     [[nodiscard]] bool isFreehandTool(AnnotationTool tool) {
+       return tool == AnnotationTool::Brush || tool == AnnotationTool::Highlighter;
+     }
+@@ -255,6 +284,48 @@ namespace capture {
+       }
+     }
+ 
++    // Drops up to `bytes` bytes from the end of `text`, never splitting a UTF-8 sequence.
++    // delete_surrounding_text counts BYTES (text-input-unstable-v3), so a per-codepoint
++    // loop would remove up to 3x the intended text for CJK.
++    void removeTrailingBytes(std::string& text, std::uint32_t bytes) {
++      std::size_t start = text.size();
++      while (start > 0 && text.size() - start < bytes) {
++        --start;
++        while (start > 0 && (static_cast<unsigned char>(text[start]) & 0xC0U) == 0x80U) {
++          --start; // keep whole UTF-8 sequences
++        }
++      }
++      text.resize(start);
++    }
++
++    [[nodiscard]] bool isSelectAllKey(const KeyboardEvent& event) {
++      return (event.modifiers & KeyMod::Ctrl) != 0 && (event.sym == XKB_KEY_a || event.sym == XKB_KEY_A);
++    }
++
++    // Applies a typed or erased key to the annotation. Returns false when the key carries no
++    // edit, so the caller can swallow it. A live select-all is replaced by the next input and
++    // cleared by Backspace/Delete — the annotator has no caret or partial selection model.
++    [[nodiscard]] bool applyTypedKey(Annotation& target, const KeyboardEvent& event) {
++      const bool typed = event.utf32 != 0 && !event.preedit;
++      const bool erases = KeySymbol::isBackspaceOrDelete(event.sym);
++      if (target.textSelected) {
++        if (!erases && !typed) {
++          return false;
++        }
++        target.text.clear();
++        target.textSelected = false;
++      }
++      if (KeySymbol::isBackspace(event.sym)) {
++        popUtf8(target.text);
++        return true;
++      }
++      if (typed) {
++        appendUtf8(target.text, event.utf32);
++        return true;
++      }
++      return false;
++    }
++
+   } // namespace
+ 
+   AnnotationToolState defaultAnnotationToolState() {
+@@ -341,6 +412,147 @@ namespace capture {
+     m_renderContext = renderContext;
+   }
+ 
++  void AnnotationOverlay::setTextInputService(TextInputService* service) { m_textInputService = service; }
++
++  // ---- TextInputClient (IME) ----
++  // The Text tool used to consume raw wl_keyboard codepoints, which only ever yields
++  // what the active layout maps directly; composed input (fcitx5, ibus, dead keys)
++  // never arrives that way. While the text edit is open the overlay registers with the
++  // shared TextInputService so zwp_text_input_v3 preedit/commit drive the annotation.
++
++  Annotation* AnnotationOverlay::activeTextAnnotation() {
++    if (m_textInstance == nullptr || !m_textIndex.has_value()) {
++      return nullptr;
++    }
++    return documentFor(*m_textInstance).active();
++  }
++
++  void AnnotationOverlay::beginTextInput(Instance& instance) {
++    if (m_textInputService == nullptr || instance.surface == nullptr) {
++      return;
++    }
++    m_imePreedit.clear();
++    m_textInputService->setFocusedClient(instance.surface->wlSurface(), this);
++  }
++
++  void AnnotationOverlay::endTextInput() {
++    m_imePreedit.clear();
++    if (m_textInputService != nullptr) {
++      m_textInputService->clearFocusedClient(this);
++    }
++  }
++
++  TextInputState AnnotationOverlay::textInputState() const {
++    TextInputState state;
++    if (m_textInstance == nullptr || !m_textIndex.has_value()) {
++      return state;
++    }
++    // documentFor is non-const but a state query does not mutate the document.
++    AnnotationDocument& doc = const_cast<AnnotationOverlay*>(this)->documentFor(*m_textInstance);
++    const Annotation* target = doc.active();
++    if (target == nullptr || target->points.empty()) {
++      return state;
++    }
++    // No surrounding text and no client-drawn preedit: the caret is all the IME needs, and
++    // claiming preedit support we never render would make hint-respecting IMEs hide the
++    // composition (zwp_text_input_v3 content hints).
++    state.sendSurroundingText = false;
++    state.preeditVisible = false;
++    // Anchor the candidate window at the caret: end of the drawn text plus any live
++    // preedit, one font-size tall. Annotation points are canvas-local (see
++    // onCanvasPress, which subtracts canvasRect), while zwp_text_input_v3 wants
++    // surface-local coordinates — so add the canvas origin back. It is (0,0) for the
++    // full-screen Live/Frozen overlays but the centred image rect for region captures,
++    // where omitting it parks the candidate window off the text.
++    const auto textAdvance = [](const std::string& text, double font) {
++      // ASCII/Latin ≈ 0.6em, CJK and other 3+-byte codepoints ≈ 1.0em. A flat 0.6em
++      // undershot Chinese by 40%, which landed the window on the wrong wrapped line.
++      double advance = 0.0;
++      for (const char raw : text) {
++        const auto byte = static_cast<unsigned char>(raw);
++        if ((byte & 0xC0U) == 0x80U) {
++          continue; // UTF-8 continuation byte
++        }
++        advance += (byte >= 0xE0U ? 1.0 : 0.6) * font;
++      }
++      return advance;
++    };
++    const auto font = static_cast<std::int32_t>(std::max(target->width, 1.0));
++    const AnnotationPoint origin = target->points.front();
++    const AnnotationRect& canvas = m_textInstance->canvasRect;
++    const double advance =
++        textAdvance(target->text, target->width) + textAdvance(m_imePreedit, target->width);
++    // Wrap the estimated advance at textWrapWidth the same way Pango wraps the glyphs, so
++    // the candidate window follows onto the wrapped line instead of marching past the edge.
++    double caretOffsetX = advance;
++    double caretOffsetY = -static_cast<double>(font);
++    if (target->textWrapWidth > 0.0) {
++      const double lineWidth = std::max(1.0, target->textWrapWidth);
++      const auto row = static_cast<int>(advance / lineWidth);
++      caretOffsetX = advance - (static_cast<double>(row) * lineWidth);
++      caretOffsetY += static_cast<double>(row) * target->width * 1.2;
++    }
++    state.cursorRectX = static_cast<std::int32_t>(canvas.x + origin.x + caretOffsetX);
++    state.cursorRectY = static_cast<std::int32_t>(canvas.y + origin.y + caretOffsetY);
++    state.cursorRectWidth = 1;
++    state.cursorRectHeight = font;
++    return state;
++  }
++
++  void AnnotationOverlay::textInputApplyEdit(const TextInputEdit& edit) {
++    Annotation* target = activeTextAnnotation();
++    if (target == nullptr || m_textInstance == nullptr) {
++      return;
++    }
++    // delete_surrounding_text lengths are BYTE counts (text-input-unstable-v3); an empty
++    // commit_string (a cancelled candidate) must not count as replacing the selection.
++    const bool deletesText = edit.hasDelete && edit.deleteBeforeLength > 0;
++    const bool commitsText = edit.hasCommitText && !edit.commitText.empty();
++    bool changed = false;
++    // A live select-all is consumed by the next committed edit, mirroring handleTextKey.
++    if (target->textSelected && (commitsText || deletesText)) {
++      target->text.clear();
++      target->textSelected = false;
++      changed = true;
++    }
++    if (deletesText && !target->text.empty()) {
++      removeTrailingBytes(target->text, edit.deleteBeforeLength);
++      changed = true;
++    }
++    if (commitsText) {
++      target->text.append(edit.commitText);
++      m_imePreedit.clear();
++      changed = true;
++    }
++    if (edit.hasPreedit) {
++      m_imePreedit = edit.preeditText;
++    }
++    if (edit.submit) {
++      // An IME may report Return as a submit action instead of forwarding the key, which
++      // would otherwise leave the edit open with every later key swallowed.
++      commitTextEdit();
++      return;
++    }
++    if (!changed) {
++      return;
++    }
++    Instance& inst = *m_textInstance;
++    clampTextAnchorToCanvas(*target, inst.canvasRect.height);
++    AnnotationDocument& doc = documentFor(inst);
++    doc.touch();
++    inst.renderedGeneration = doc.generation();
++    redrawActive(inst);
++    if (inst.surface != nullptr) {
++      inst.surface->requestUpdateOnly();
++    }
++  }
++
++  void AnnotationOverlay::textInputResetPreedit() { m_imePreedit.clear(); }
++
++  void AnnotationOverlay::textInputActivated(TextInputService& /*service*/) {}
++
++  void AnnotationOverlay::textInputDeactivated(TextInputService& /*service*/) {}
++
+   void AnnotationOverlay::setExportCallback(ExportCallback callback) { m_onExport = std::move(callback); }
+ 
+   void AnnotationOverlay::setFreezeCallback(FreezeCallback callback) { m_onFreeze = std::move(callback); }
+@@ -460,6 +672,7 @@ namespace capture {
+     m_gestureInstance = nullptr;
+     m_moveIndex.reset();
+     m_cropDragging = false;
++    endTextInput();
+     m_textInstance = nullptr;
+     m_textIndex.reset();
+     destroySurfaces();
+@@ -570,6 +783,10 @@ namespace capture {
+   }
+ 
+   void AnnotationOverlay::destroySurfaces() {
++    // Clear the IME focus first: it commits the still-live wl_surface, while the surfaces
++    // themselves are freed by m_instances.clear() below — doing this afterwards is a
++    // use-after-free.
++    endTextInput();
+     // A gesture cut short by the teardown (Freeze mid-drag, an output going away) has a
+     // snapshot pushed and a half-drawn annotation appended; roll it back rather than leave the
+     // document with an interaction nobody can close.
+@@ -1577,12 +1794,14 @@ namespace capture {
+         cairo_scale(cr, inst.canvasScale, inst.canvasScale);
+         renderAnnotation(cr, *target, inst.backgroundSurface, inst.canvasScale);
+         if (editingText) {
+-          const AnnotationRect text = measureText(*target);
++          // The block box is useless once the text wraps (longest-line width, full height),
++          // so the caret comes from the layout's last line instead.
++          const AnnotationRect caret = measureTextCaret(*target);
+           cairo_set_source_rgba(cr, target->stroke.r, target->stroke.g, target->stroke.b, target->stroke.a);
+-          cairo_rectangle(cr, text.x + text.width, text.y, kCaretWidth, text.height);
++          cairo_rectangle(cr, caret.x, caret.y, kCaretWidth, caret.height);
+           cairo_fill(cr);
+           bounds = unionRect(
+-              bounds, AnnotationRect{.x = text.x + text.width, .y = text.y, .width = kCaretWidth, .height = text.height}
++              bounds, AnnotationRect{.x = caret.x, .y = caret.y, .width = kCaretWidth, .height = caret.height}
+           );
+         }
+         cairo_restore(cr);
+@@ -1612,10 +1831,25 @@ namespace capture {
+       if (surface == nullptr || !texture.valid()) {
+         return;
+       }
+-      const int x = static_cast<int>(rect.x);
+-      const int y = static_cast<int>(rect.y);
+-      const int width = static_cast<int>(rect.width);
+-      const int height = static_cast<int>(rect.height);
++      int x = static_cast<int>(rect.x);
++      int y = static_cast<int>(rect.y);
++      int width = static_cast<int>(rect.width);
++      int height = static_cast<int>(rect.height);
++      // Dirty rects routinely poke past the surface: kDirtyPadding grows every rect by a
++      // couple of pixels, and an annotation dragged against the canvas edge extends beyond
++      // it. Both the readback and the texture upload reject out-of-range rectangles
++      // wholesale, so those stale pixels would stay on screen — the drag residue visible
++      // next to the canvas border. Clip to the shared limits instead of dropping the update.
++      const int limitWidth = std::min(cairo_image_surface_get_width(surface), texture.width);
++      const int limitHeight = std::min(cairo_image_surface_get_height(surface), texture.height);
++      const int clippedLeft = std::clamp(x, 0, limitWidth);
++      const int clippedTop = std::clamp(y, 0, limitHeight);
++      const int clippedRight = std::clamp(x + width, 0, limitWidth);
++      const int clippedBottom = std::clamp(y + height, 0, limitHeight);
++      x = clippedLeft;
++      y = clippedTop;
++      width = clippedRight - clippedLeft;
++      height = clippedBottom - clippedTop;
+       if (width <= 0 || height <= 0) {
+         return;
+       }
+@@ -1839,10 +2073,14 @@ namespace capture {
+               .fill = AnnotationColor{.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 0.0F},
+               .points = {point},
+               .text = {},
++              // Wrap at the canvas edge (the capture border) so long text is never
++              // cut off by the region or the screen bounds.
++              .textWrapWidth = std::max(0.0, inst.canvasRect.width - point.x),
+           }
+       );
+       m_textInstance = &inst;
+       m_textIndex = doc.annotations().size() - 1;
++      beginTextInput(inst);
+       redrawActive(inst);
+       break;
+     }
+@@ -2036,8 +2274,12 @@ namespace capture {
+     Instance& inst = *m_textInstance;
+     AnnotationDocument& doc = documentFor(inst);
+     Annotation* target = doc.active();
++    if (target != nullptr) {
++      target->textSelected = false;
++    }
+     const bool discard = target == nullptr || target->text.empty();
+ 
++    endTextInput();
+     m_textIndex.reset();
+     m_textInstance = nullptr;
+     if (discard) {
+@@ -2061,6 +2303,7 @@ namespace capture {
+     }
+     Instance& inst = *m_textInstance;
+     AnnotationDocument& doc = documentFor(inst);
++    endTextInput();
+     m_textIndex.reset();
+     m_textInstance = nullptr;
+     doc.discardInteraction();
+@@ -2094,14 +2337,14 @@ namespace capture {
+       return true;
+     }
+ 
+-    if (KeySymbol::isBackspace(event.sym)) {
+-      popUtf8(target->text);
+-    } else if (event.utf32 != 0 && !event.preedit) {
+-      appendUtf8(target->text, event.utf32);
+-    } else {
++    // Ctrl+A selects the whole text (editor-only state, highlighted behind the glyphs).
++    if (isSelectAllKey(event)) {
++      target->textSelected = !target->text.empty();
++    } else if (!applyTypedKey(*target, event)) {
+       // Every other key is swallowed so shortcuts cannot fire mid-word.
+       return true;
+     }
++    clampTextAnchorToCanvas(*target, inst.canvasRect.height);
+     doc.touch();
+     inst.renderedGeneration = doc.generation();
+     redrawActive(inst);
+@@ -2280,6 +2523,8 @@ namespace capture {
+     const std::size_t index = toolIndex(AnnotationTool::Text);
+     target->width = m_tools.width[index];
+     target->stroke = m_tools.color[index];
++    // A larger font can push the wrapped block past the bottom edge; re-anchor it.
++    clampTextAnchorToCanvas(*target, inst.canvasRect.height);
+     doc.touch();
+     inst.renderedGeneration = doc.generation();
+     redrawActive(inst);
+diff --git a/src/capture/annotation_overlay.h b/src/capture/annotation_overlay.h
+index e70ed60..b4373ed 100644
+--- a/src/capture/annotation_overlay.h
++++ b/src/capture/annotation_overlay.h
+@@ -2,6 +2,7 @@
+ 
+ #include "capture/annotation_document.h"
+ #include "capture/screenshot_image.h"
++#include "ui/text_input_client.h"
+ 
+ #include <array>
+ #include <cstdint>
+@@ -16,6 +17,7 @@
+ class Flex;
+ class Renderer;
+ class RenderContext;
++class TextInputService;
+ class WaylandConnection;
+ struct KeyboardEvent;
+ struct PointerEvent;
+@@ -51,7 +53,7 @@ namespace capture {
+ 
+   [[nodiscard]] AnnotationToolState defaultAnnotationToolState();
+ 
+-  class AnnotationOverlay {
++  class AnnotationOverlay : public TextInputClient {
+   public:
+     using ExportCallback = std::function<void(ScreencopyImage image, AnnotationExport action)>;
+     using FreezeCallback = std::function<void()>;
+@@ -65,6 +67,10 @@ namespace capture {
+     ~AnnotationOverlay();
+ 
+     void initialize(WaylandConnection& wayland, RenderContext* renderContext);
++    // IME bridge: while the Text tool edits, the overlay registers itself as the
++    // focused text-input client so fcitx5/ibus can compose (preedit) and commit
++    // non-ASCII text, which raw wl_keyboard events can never deliver.
++    void setTextInputService(TextInputService* service);
+     void setExportCallback(ExportCallback callback);
+     void setFreezeCallback(FreezeCallback callback);
+     void setCaptureRegionCallback(CaptureRegionCallback callback);
+@@ -139,6 +145,18 @@ namespace capture {
+     [[nodiscard]] bool handleTextKey(const KeyboardEvent& event);
+     [[nodiscard]] bool handleToolKey(std::uint32_t sym);
+ 
++    // TextInputClient (IME) implementation: composes/commits text for the active
++    // text annotation while fcitx5/ibus owns the keyboard.
++    [[nodiscard]] TextInputState textInputState() const override;
++    void textInputApplyEdit(const TextInputEdit& edit) override;
++    void textInputResetPreedit() override;
++    void textInputActivated(TextInputService& service) override;
++    void textInputDeactivated(TextInputService& service) override;
++
++    void beginTextInput(Instance& instance);
++    void endTextInput();
++    [[nodiscard]] Annotation* activeTextAnnotation();
++
+     void selectTool(AnnotationTool tool);
+     void setToolColor(AnnotationColor color);
+     void adjustToolWidth(double delta);
+@@ -190,6 +208,10 @@ namespace capture {
+     Instance* m_textInstance = nullptr;
+     std::optional<std::size_t> m_textIndex;
+ 
++    // IME state for the text tool (see TextInputClient overrides).
++    TextInputService* m_textInputService = nullptr;
++    std::string m_imePreedit;
++
+     // Last surface-local pointer position, the anchor the toolbar drag works from.
+     double m_pointerX = 0.0;
+     double m_pointerY = 0.0;
+diff --git a/src/capture/annotation_raster.cpp b/src/capture/annotation_raster.cpp
+index 09bc2af..1a3b3b5 100644
+--- a/src/capture/annotation_raster.cpp
++++ b/src/capture/annotation_raster.cpp
+@@ -5,6 +5,7 @@
+ #include <cmath>
+ #include <cstring>
+ #include <map>
++#include <tuple>
+ #include <numbers>
+ #include <pango/pangocairo.h>
+ #include <string>
+@@ -32,6 +33,12 @@ namespace capture {
+       double top = 0.0;  // relative to the anchor y (baseline), negative above it
+       double width = 0.0;
+       double height = 0.0;
++      // Caret at the end of the text, in the same anchor-relative space as left/top. The
++      // block box cannot stand in for it once the text wraps: its width is the longest
++      // line and its height spans every line.
++      double caretLeft = 0.0;
++      double caretTop = 0.0;
++      double caretHeight = 0.0;
+     };
+ 
+     [[nodiscard]] PangoFontDescription* makeTextFont(double sizePx) {
+@@ -45,6 +52,10 @@ namespace capture {
+       pango_layout_set_font_description(layout, font);
+       pango_font_description_free(font);
+       pango_layout_set_single_paragraph_mode(layout, TRUE);
++      if (annotation.textWrapWidth > 0.0) {
++        pango_layout_set_width(layout, static_cast<int>(annotation.textWrapWidth * PANGO_SCALE));
++        pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
++      }
+       pango_layout_set_text(layout, annotation.text.c_str(), -1);
+     }
+ 
+@@ -59,6 +70,9 @@ namespace capture {
+       pango_layout_get_pixel_size(layout, &layoutWidth, &layoutHeight);
+       const double baseline = static_cast<double>(pango_layout_get_baseline(layout)) / PANGO_SCALE;
+ 
++      PangoRectangle caretPos{};
++      pango_layout_index_to_pos(layout, static_cast<int>(annotation.text.size()), &caretPos);
++
+       g_object_unref(layout);
+       cairo_destroy(cr);
+       cairo_surface_destroy(surface);
+@@ -68,14 +82,18 @@ namespace capture {
+           .top = -baseline,
+           .width = static_cast<double>(layoutWidth),
+           .height = static_cast<double>(layoutHeight),
++          .caretLeft = static_cast<double>(caretPos.x) / PANGO_SCALE,
++          .caretTop = (static_cast<double>(caretPos.y) / PANGO_SCALE) - baseline,
++          .caretHeight = static_cast<double>(caretPos.height) / PANGO_SCALE,
+       };
+     }
+ 
+     [[nodiscard]] TextMetrics textMetrics(const Annotation& annotation) {
+       // Pango measurement dominates hit testing and dirty-rect math during a text edit,
+       // so results are memoized per (content, font size).
+-      static std::map<std::pair<std::string, double>, TextMetrics> cache;
+-      const auto key = std::pair<std::string, double>(annotation.text, annotation.width);
++      static std::map<std::tuple<std::string, double, double>, TextMetrics> cache;
++      const auto key =
++          std::tuple<std::string, double, double>(annotation.text, annotation.width, annotation.textWrapWidth);
+       const auto it = cache.find(key);
+       if (it != cache.end()) {
+         return it->second;
+@@ -391,9 +409,19 @@ namespace capture {
+         return;
+       }
+       const TextMetrics metrics = textMetrics(annotation);
++      const AnnotationPoint anchor = annotation.points.front();
++      if (annotation.textSelected) {
++        // Select-all highlight (editor-only, see annotation_document.h). save/restore
++        // keeps the caller's stroke colour and path untouched.
++        cairo_save(cr);
++        cairo_set_source_rgba(cr, 0.29, 0.56, 0.96, 0.40);
++        cairo_rectangle(cr, anchor.x + metrics.left, anchor.y + metrics.top, metrics.width, metrics.height);
++        cairo_fill(cr);
++        cairo_restore(cr);
++      }
+       PangoLayout* layout = pango_cairo_create_layout(cr);
+       applyTextLayout(layout, annotation);
+-      cairo_move_to(cr, annotation.points.front().x + metrics.left, annotation.points.front().y + metrics.top);
++      cairo_move_to(cr, anchor.x + metrics.left, anchor.y + metrics.top);
+       pango_cairo_show_layout(cr, layout);
+       g_object_unref(layout);
+     }
+@@ -507,6 +535,19 @@ namespace capture {
+     };
+   }
+ 
++  AnnotationRect measureTextCaret(const Annotation& annotation) {
++    if (annotation.points.empty()) {
++      return AnnotationRect{};
++    }
++    const TextMetrics metrics = textMetrics(annotation);
++    return AnnotationRect{
++        .x = annotation.points.front().x + metrics.caretLeft,
++        .y = annotation.points.front().y + metrics.caretTop,
++        .width = 1.0,
++        .height = metrics.caretHeight,
++    };
++  }
++
+   void renderAnnotation(cairo_t* cr, const Annotation& annotation, cairo_surface_t* background, double scale) {
+     if (annotation.points.empty()) {
+       return;
+diff --git a/src/capture/annotation_raster.h b/src/capture/annotation_raster.h
+index e965ea1..fd53d4e 100644
+--- a/src/capture/annotation_raster.h
++++ b/src/capture/annotation_raster.h
+@@ -24,6 +24,10 @@ namespace capture {
+   // annotation.points[0].y.
+   [[nodiscard]] AnnotationRect measureText(const Annotation& annotation);
+ 
++  // Caret box at the end of a Text annotation (same coordinate space as measureText).
++  // Derived from the layout's last line, so it stays correct once the text wraps.
++  [[nodiscard]] AnnotationRect measureTextCaret(const Annotation& annotation);
++
+   // Frozen straight-alpha RGBA -> cairo ARGB32 (premultiplied, device pixels). Caller destroys.
+   [[nodiscard]] cairo_surface_t* frozenToCairo(const ScreencopyImage& image);
+ 
+diff --git a/src/capture/screenshot_service.cpp b/src/capture/screenshot_service.cpp
+index 5f5c4c6..a9842ff 100644
+--- a/src/capture/screenshot_service.cpp
++++ b/src/capture/screenshot_service.cpp
+@@ -613,10 +613,10 @@ namespace {
+ 
+ ScreenshotService::ScreenshotService(
+     WaylandConnection& wayland, CompositorPlatform& platform, ConfigService& configService,
+-    NotificationManager& notifications, ClipboardService* clipboard
++    NotificationManager& notifications, ClipboardService* clipboard, TextInputService* textInputService
+ )
+     : m_wayland(wayland), m_platform(platform), m_notifications(notifications), m_configService(configService),
+-      m_clipboard(clipboard), m_capture(wayland) {}
++      m_clipboard(clipboard), m_textInputService(textInputService), m_capture(wayland) {}
+ 
+ ScreenshotService::~ScreenshotService() = default;
+ 
+@@ -1215,6 +1215,7 @@ void ScreenshotService::ensureAnnotationOverlay() {
+     m_annotationOverlay = std::make_unique<capture::AnnotationOverlay>();
+   }
+   m_annotationOverlay->initialize(m_wayland, m_regionRenderContext);
++  m_annotationOverlay->setTextInputService(m_textInputService);
+   m_annotationOverlay->setStateSetter([this](std::string_view key, std::string_view value) {
+     persistAnnotationToolState(key, value);
+   });
+diff --git a/src/capture/screenshot_service.h b/src/capture/screenshot_service.h
+index e291340..aad3513 100644
+--- a/src/capture/screenshot_service.h
++++ b/src/capture/screenshot_service.h
+@@ -18,6 +18,7 @@ class CompositorPlatform;
+ class ConfigService;
+ class IpcService;
+ class NotificationManager;
++class TextInputService;
+ struct Config;
+ class RenderContext;
+ class WaylandConnection;
+@@ -43,7 +44,8 @@ public:
+ 
+   ScreenshotService(
+       WaylandConnection& wayland, CompositorPlatform& platform, ConfigService& configService,
+-      NotificationManager& notifications, ClipboardService* clipboard = nullptr
++      NotificationManager& notifications, ClipboardService* clipboard = nullptr,
++      TextInputService* textInputService = nullptr
+   );
+   ~ScreenshotService();
+ 
+@@ -184,6 +186,8 @@ private:
+   NotificationManager& m_notifications;
+   ConfigService& m_configService;
+   ClipboardService* m_clipboard = nullptr;
++  // Shared IME service, forwarded to the annotation overlay so composed text works.
++  TextInputService* m_textInputService = nullptr;
+   ScreenshotCapture m_capture;
+   std::unique_ptr<capture::ScreenshotRegionOverlay> m_regionOverlay;
+   std::vector<PendingCapture> m_captureQueue;

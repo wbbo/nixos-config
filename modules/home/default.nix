@@ -1,7 +1,7 @@
 # Home Manager 入口 —— 主用户的家目录配置
 # 由 hosts/default/configuration.nix 的 home-manager.users.<mainUser> 引入,
 # mainUser 通过 extraSpecialArgs 传入 (见 hosts/default/configuration.nix)。
-{ pkgs, noctalia, mainUser, ... }:
+{ pkgs, noctaliaPkg, mainUser, ... }:
 {
   imports = [
     ./niri
@@ -14,6 +14,8 @@
     ./programs/thunderbird.nix
     ./programs/fcitx5.nix
     ./programs/noctalia.nix
+    # noctaliaPkg (带本地补丁的 noctalia 包) 的定义, 供上面 noctalia.nix 与本文件共用
+    ./programs/noctalia-package.nix
     ./programs/neovim.nix
     ./programs/vscode.nix
     ./programs/cc-switch.nix
@@ -94,7 +96,7 @@
     adwaita-icon-theme
 
     # Noctalia Shell(面板/通知/启动器/锁屏)
-    noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
+    noctaliaPkg
 
     # 录屏工具 OBS Studio 走 Flathub Flatpak 安装, 与微信同一套路:
     # 系统级 /var/lib/flatpak 跨 rebuild 天然保留, 而 ~/.var/app/<app>
