@@ -140,12 +140,21 @@ if [ -f "$SWAP_FILE" ]; then
   fi
 fi
 
+# 构建期适配: 把本机硬件值 (hostPlatform / swapfile 大小 / resume_offset)
+# 写进 hardware-configuration.nix / disks.nix / boot.nix。
+# 用 trap 兜底还原 —— switch 失败 / Ctrl-C / 任何 set -e 退出路径都会还原。
+# 没有它时, 构建中途失败会把本机专属值留在工作区, 一旦顺手 commit 就进了
+# 分发模板 (2026-09-14 实际发生过: HM 激活失败, 三个文件残留在适配状态,
+# 直到下一次构建成功才被顺手还原)。
+restore_adapt_and_report() {
+  restore_adapt
+  info "硬件适配文件已还原 (系统已固化, 仓库保持干净)"
+}
+trap restore_adapt_and_report EXIT
+
 bash scripts/adapt-hardware.sh
 
 HOST_NAME="$(host_name)"
 
-# 构建用适配后的工作区文件; 成功后还原 (系统已固化, 仓库保持干净)
+# 构建用适配后的工作区文件; 退出时由上方 trap 还原 (系统已固化)
 sudo nixos-rebuild switch --flake ".#${HOST_NAME}" "$@"
-
-restore_adapt
-info "硬件适配文件已还原 (系统已固化, 仓库保持干净)"
