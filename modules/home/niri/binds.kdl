@@ -149,8 +149,10 @@ binds {
     // ★ 历史 (2026-09-14 收敛): 这里原有两套 grim|slurp|satty 链路 ——
     //   Mod+Shift+S (slurp 框选) 与 Mod+Ctrl+Shift+S (grim 全屏)。
     //   全屏那条先移除 (其场景被冻结标注完整覆盖); 区域这条随后也切到 noctalia,
-    //   理由是 noctalia 原生已覆盖"框选 + 标注"全流程, 省掉 grim/slurp/satty
-    //   三个外部依赖。区域截图需配合 noctalia.nix 的 annotate = true
+    //   理由是 noctalia 原生已覆盖"框选 + 标注"全流程。随后 grim/slurp/satty
+    //   三个包连同 satty 配置模块与其窗口规则一并移除
+    //   (见 packages.nix / home/default.nix / rule.kdl)。
+    //   区域截图需配合 noctalia.nix 的 annotate = true
     //   (否则框选完直接保存, 不进标注器)。
     //   失去的特性: satty 链路在进标注器**之前**就已 wl-copy, 标注中途关窗
     //   原图也不丢; noctalia 是完成时才复制。若日后需要这个抗中断特性, 可从

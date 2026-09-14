@@ -10,12 +10,10 @@ window-rule {
 }
 
 // ===== 浮动窗口(弹窗/对话框/工具) =====
-// 截图工具 (satty 的 app-id 是 com.gabm.satty, 前缀匹配兼顾未来 id 变化)
-window-rule {
-    match app-id="^(satty|com[.]gabm[.]satty|flameshot|copyq)$"
-    open-floating true
-    opacity 1.0
-}
+// 注: 此处原有截图工具浮动规则 (match satty|flameshot|copyq)。2026-09-14
+// 截图整体切到 noctalia 原生实现后 satty 已移除, 而 flameshot/copyq 从未
+// 安装, 该规则匹配不到任何 app-id, 故整条删除。若将来引入同类截图工具,
+// 在此补一条 open-floating 规则即可。
 
 // 系统设置/管理
 window-rule {

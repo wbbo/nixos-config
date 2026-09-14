@@ -27,7 +27,6 @@
     ./programs/node.nix
     ./programs/c-cpp.nix
     ./programs/starship.nix
-    ./programs/satty.nix
     ./programs/scratchpad.nix
     ./programs/pigma.nix
     ./programs/lutris.nix
