@@ -266,6 +266,20 @@ in {
     # 注意: UI 选项名 filled-circles/random-icons 是翻译键, 不是配置值)。
     password_style = "random"
 
+    # 截图输出 (Alt+Shift+S 冻结标注 / Mod+S 控制中心截图按钮共用此配置):
+    # 目录与文件名模式对齐 satty (satty-config.toml 的
+    # output-filename = ~/Pictures/screenshot/%Y-%m-%d_%H-%M-%S.png),
+    # 两条截图链路落盘到同一目录、同一命名风格。
+    # 注意段名是 [shell.screenshot] 子表 —— 写在 [shell] 平层 (无论
+    # screenshot_directory 还是 screenshot-directory) 会被判 unknown setting
+    # (noctalia config validate 实测)。noctalia 自动补 .png 扩展名。
+    # directory 为空 = XDG Pictures 目录 (实测落 ~/Pictures/ 顶层)。
+    [shell.screenshot]
+    directory = "/home/${mainUser}/Pictures/screenshot"
+    filename_pattern = "%Y-%m-%d_%H-%M-%S"
+    save_to_file = true
+    copy_to_clipboard = true
+
     # ============================================================
     # 会话菜单 (binds.kdl Mod+Alt+L → panel-toggle session)
     # actions 数组整体替换 noctalia 默认列表 (lock/logout/lock_and_suspend/
