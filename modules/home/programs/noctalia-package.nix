@@ -1,6 +1,6 @@
 # Noctalia 包 (本地补丁版) —— 供同层模块共用, 经 _module.args 暴露为 noctaliaPkg
 #
-# 补丁 patches/noctalia-annotation-ime.patch 实际含**四个独立关注点**, 上游合并其中
+# 补丁 patches/noctalia-annotation-ime.patch 实际含**五个独立关注点**, 上游合并其中
 # 一个时其余仍然需要 —— 删除、升级或上游化之前逐条核对:
 #
 #   1. IME 接线 (上游功能缺口): 截图标注器未接 zwp_text_input_v3, 文字工具只消费
@@ -14,6 +14,10 @@
 #      可独立上游。
 #   4. 文本度量: 边界/光标改用 Pango 末行 caret 位置 —— 折行后块级宽高 (最长行宽 +
 #      整块高) 不再代表文本末尾。
+#   5. 预编辑 (preedit) 渲染: 标注器声明 PREEDIT_SHOWN 却从不绘制, 而该 hint 是
+#      "客户端自己画"的承诺 —— fcitx5 等据此把预编辑从自己的窗口里撤走, 结果拼音
+#      **两边都不显示** (候选窗正常, 但看不到正在输入什么)。补丁现在把预编辑并入
+#      Pango layout (提交文字之后 + 单下划线), 并在 commit/取消/IME 重置时清干净。
 #
 # 基础版本: 补丁在上游 2856ec3 上开发, 在 flake input 锁定的 18bd8d63 上干净应用
 # (仅行偏移 -7/-4, 无 fuzz/FAILED); 上游 input 升级后需重新核对应用情况。
