@@ -1,6 +1,6 @@
 # Noctalia 包 (本地补丁版) —— 供同层模块共用, 经 _module.args 暴露为 noctaliaPkg
 #
-# 补丁 patches/noctalia-annotation-ime.patch 实际含**五个独立关注点**, 上游合并其中
+# 补丁 patches/noctalia-annotation-ime.patch 实际含**六个独立关注点**, 上游合并其中
 # 一个时其余仍然需要 —— 删除、升级或上游化之前逐条核对:
 #
 #   1. IME 接线 (上游功能缺口): 截图标注器未接 zwp_text_input_v3, 文字工具只消费
@@ -20,6 +20,11 @@
 #      Pango layout (提交文字之后), 并在 commit/取消/IME 重置时清干净。
 #      样式刻意**不加下划线** —— 与 noctalia 自己的文本框 (launcher 把预编辑 insert
 #      进值里原样渲染) 保持一致; 画布上加下划线读起来像标注样式而非输入状态。
+#   6. 标注文字字体: 上游把字体族硬编码为 "Sans Bold", 于是标注文字 (以及画在同一
+#      layout 里的 IME 预编辑) 与界面其余部分的字体/字重都不一致 —— 拼音看着像标注
+#      而不是输入。补丁改为可设置, 由 ScreenshotService 每次截图时注入
+#      shell.font_family (与 RenderContext 同一个来源, 默认 sans-serif); 字体变更时
+#      一并清空度量缓存, 避免用旧字形量出的尺寸。
 #
 # 基础版本: 补丁在上游 2856ec3 上开发, 在 flake input 锁定的 18bd8d63 上干净应用
 # (仅行偏移 -7/-4, 无 fuzz/FAILED); 上游 input 升级后需重新核对应用情况。

@@ -41,7 +41,7 @@ index 3a552fc..0109ff6 100644
  
    struct AnnotationRect {
 diff --git a/src/capture/annotation_overlay.cpp b/src/capture/annotation_overlay.cpp
-index d0fe592..e510998 100644
+index d0fe592..e61cb69 100644
 --- a/src/capture/annotation_overlay.cpp
 +++ b/src/capture/annotation_overlay.cpp
 @@ -29,6 +29,7 @@
@@ -322,7 +322,20 @@ index d0fe592..e510998 100644
    void AnnotationOverlay::setExportCallback(ExportCallback callback) { m_onExport = std::move(callback); }
  
    void AnnotationOverlay::setFreezeCallback(FreezeCallback callback) { m_onFreeze = std::move(callback); }
-@@ -460,6 +710,7 @@ namespace capture {
+@@ -385,6 +635,12 @@ namespace capture {
+ 
+   void AnnotationOverlay::setCursorVisible(bool visible) { m_cursorVisible = visible; }
+ 
++  void AnnotationOverlay::setTextFontFamily(const std::string& family) {
++    // The rasterizer owns the Text tool's Pango layout (and the live pre-edit drawn into
++    // it), so the typeface lives there rather than on the overlay.
++    setAnnotationTextFontFamily(family);
++  }
++
+   bool AnnotationOverlay::cursorVisible() const noexcept {
+     if (m_mode == AnnotationMode::Image) {
+       return m_image.canToggleCursor() ? m_cursorVisible : m_image.cursorVisible;
+@@ -460,6 +716,7 @@ namespace capture {
      m_gestureInstance = nullptr;
      m_moveIndex.reset();
      m_cropDragging = false;
@@ -330,7 +343,7 @@ index d0fe592..e510998 100644
      m_textInstance = nullptr;
      m_textIndex.reset();
      destroySurfaces();
-@@ -570,6 +821,10 @@ namespace capture {
+@@ -570,6 +827,10 @@ namespace capture {
    }
  
    void AnnotationOverlay::destroySurfaces() {
@@ -341,7 +354,7 @@ index d0fe592..e510998 100644
      // A gesture cut short by the teardown (Freeze mid-drag, an output going away) has a
      // snapshot pushed and a half-drawn annotation appended; roll it back rather than leave the
      // document with an interaction nobody can close.
-@@ -1577,12 +1832,14 @@ namespace capture {
+@@ -1577,12 +1838,14 @@ namespace capture {
          cairo_scale(cr, inst.canvasScale, inst.canvasScale);
          renderAnnotation(cr, *target, inst.backgroundSurface, inst.canvasScale);
          if (editingText) {
@@ -359,7 +372,7 @@ index d0fe592..e510998 100644
            );
          }
          cairo_restore(cr);
-@@ -1612,10 +1869,25 @@ namespace capture {
+@@ -1612,10 +1875,25 @@ namespace capture {
        if (surface == nullptr || !texture.valid()) {
          return;
        }
@@ -389,7 +402,7 @@ index d0fe592..e510998 100644
        if (width <= 0 || height <= 0) {
          return;
        }
-@@ -1839,10 +2111,14 @@ namespace capture {
+@@ -1839,10 +2117,14 @@ namespace capture {
                .fill = AnnotationColor{.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 0.0F},
                .points = {point},
                .text = {},
@@ -404,7 +417,7 @@ index d0fe592..e510998 100644
        redrawActive(inst);
        break;
      }
-@@ -2036,8 +2312,12 @@ namespace capture {
+@@ -2036,8 +2318,12 @@ namespace capture {
      Instance& inst = *m_textInstance;
      AnnotationDocument& doc = documentFor(inst);
      Annotation* target = doc.active();
@@ -417,7 +430,7 @@ index d0fe592..e510998 100644
      m_textIndex.reset();
      m_textInstance = nullptr;
      if (discard) {
-@@ -2061,6 +2341,7 @@ namespace capture {
+@@ -2061,6 +2347,7 @@ namespace capture {
      }
      Instance& inst = *m_textInstance;
      AnnotationDocument& doc = documentFor(inst);
@@ -425,7 +438,7 @@ index d0fe592..e510998 100644
      m_textIndex.reset();
      m_textInstance = nullptr;
      doc.discardInteraction();
-@@ -2094,14 +2375,14 @@ namespace capture {
+@@ -2094,14 +2381,14 @@ namespace capture {
        return true;
      }
  
@@ -445,7 +458,7 @@ index d0fe592..e510998 100644
      doc.touch();
      inst.renderedGeneration = doc.generation();
      redrawActive(inst);
-@@ -2280,6 +2561,8 @@ namespace capture {
+@@ -2280,6 +2567,8 @@ namespace capture {
      const std::size_t index = toolIndex(AnnotationTool::Text);
      target->width = m_tools.width[index];
      target->stroke = m_tools.color[index];
@@ -455,7 +468,7 @@ index d0fe592..e510998 100644
      inst.renderedGeneration = doc.generation();
      redrawActive(inst);
 diff --git a/src/capture/annotation_overlay.h b/src/capture/annotation_overlay.h
-index e70ed60..b4373ed 100644
+index e70ed60..94190bd 100644
 --- a/src/capture/annotation_overlay.h
 +++ b/src/capture/annotation_overlay.h
 @@ -2,6 +2,7 @@
@@ -494,7 +507,18 @@ index e70ed60..b4373ed 100644
      void setExportCallback(ExportCallback callback);
      void setFreezeCallback(FreezeCallback callback);
      void setCaptureRegionCallback(CaptureRegionCallback callback);
-@@ -139,6 +145,18 @@ namespace capture {
+@@ -81,6 +87,10 @@ namespace capture {
+     void setCursorVisible(bool visible);
+     [[nodiscard]] bool cursorVisible() const noexcept;
+ 
++    // Typeface for annotation text (shell.font_family). Applied to the rasterizer, which is
++    // what draws the Text tool — and the live IME pre-edit rendered with it.
++    void setTextFontFamily(const std::string& family);
++
+     void begin();
+     void beginImage(ScreenshotImage image, wl_output* target);
+     // Drops the surfaces so a screencopy frame cannot contain the overlay; documents survive.
+@@ -139,6 +149,18 @@ namespace capture {
      [[nodiscard]] bool handleTextKey(const KeyboardEvent& event);
      [[nodiscard]] bool handleToolKey(std::uint32_t sym);
  
@@ -513,7 +537,7 @@ index e70ed60..b4373ed 100644
      void selectTool(AnnotationTool tool);
      void setToolColor(AnnotationColor color);
      void adjustToolWidth(double delta);
-@@ -190,6 +208,10 @@ namespace capture {
+@@ -190,6 +212,10 @@ namespace capture {
      Instance* m_textInstance = nullptr;
      std::optional<std::size_t> m_textIndex;
  
@@ -525,7 +549,7 @@ index e70ed60..b4373ed 100644
      double m_pointerX = 0.0;
      double m_pointerY = 0.0;
 diff --git a/src/capture/annotation_raster.cpp b/src/capture/annotation_raster.cpp
-index 09bc2af..d9992a0 100644
+index 09bc2af..d706898 100644
 --- a/src/capture/annotation_raster.cpp
 +++ b/src/capture/annotation_raster.cpp
 @@ -5,6 +5,7 @@
@@ -536,7 +560,23 @@ index 09bc2af..d9992a0 100644
  #include <numbers>
  #include <pango/pangocairo.h>
  #include <string>
-@@ -32,6 +33,12 @@ namespace capture {
+@@ -13,7 +14,14 @@
+ namespace capture {
+   namespace {
+ 
+-    constexpr const char* kTextFontFamily = "Sans Bold";
++    // Font family for annotation text. Mutable: the overlay pushes shell.font_family in via
++    // setAnnotationTextFontFamily so annotations — and the IME pre-edit rendered together
++    // with them — match the rest of the shell instead of a hardcoded face. The fallback
++    // mirrors RenderContext's own default.
++    std::string& textFontFamily() {
++      static std::string family = "sans-serif";
++      return family;
++    }
+     constexpr double kHighlighterAlpha = 0.45;
+     constexpr int kBlurCacheCapacity = 4;
+     constexpr int kMaxBlurStep = 16;
+@@ -32,10 +40,16 @@ namespace capture {
        double top = 0.0;  // relative to the anchor y (baseline), negative above it
        double width = 0.0;
        double height = 0.0;
@@ -549,7 +589,12 @@ index 09bc2af..d9992a0 100644
      };
  
      [[nodiscard]] PangoFontDescription* makeTextFont(double sizePx) {
-@@ -45,7 +52,20 @@ namespace capture {
+-      PangoFontDescription* font = pango_font_description_from_string(kTextFontFamily);
++      PangoFontDescription* font = pango_font_description_from_string(textFontFamily().c_str());
+       pango_font_description_set_absolute_size(font, std::max(1.0, sizePx) * PANGO_SCALE);
+       return font;
+     }
+@@ -45,7 +59,20 @@ namespace capture {
        pango_layout_set_font_description(layout, font);
        pango_font_description_free(font);
        pango_layout_set_single_paragraph_mode(layout, TRUE);
@@ -571,7 +616,7 @@ index 09bc2af..d9992a0 100644
      }
  
      [[nodiscard]] TextMetrics measureTextUncached(const Annotation& annotation) {
-@@ -59,6 +79,9 @@ namespace capture {
+@@ -59,6 +86,9 @@ namespace capture {
        pango_layout_get_pixel_size(layout, &layoutWidth, &layoutHeight);
        const double baseline = static_cast<double>(pango_layout_get_baseline(layout)) / PANGO_SCALE;
  
@@ -581,7 +626,7 @@ index 09bc2af..d9992a0 100644
        g_object_unref(layout);
        cairo_destroy(cr);
        cairo_surface_destroy(surface);
-@@ -68,23 +91,36 @@ namespace capture {
+@@ -68,23 +98,45 @@ namespace capture {
            .top = -baseline,
            .width = static_cast<double>(layoutWidth),
            .height = static_cast<double>(layoutHeight),
@@ -591,6 +636,15 @@ index 09bc2af..d9992a0 100644
        };
      }
  
++    // Metrics memo, kept at namespace scope so a font-family change can drop the whole
++    // cache — entries measured with the previous face are stale (see
++    // setAnnotationTextFontFamily).
++    using TextMetricsCache = std::map<std::tuple<std::string, double, double>, TextMetrics>;
++    TextMetricsCache& textMetricsCache() {
++      static TextMetricsCache cache;
++      return cache;
++    }
++
      [[nodiscard]] TextMetrics textMetrics(const Annotation& annotation) {
        // Pango measurement dominates hit testing and dirty-rect math during a text edit,
        // so results are memoized per (content, font size).
@@ -607,7 +661,7 @@ index 09bc2af..d9992a0 100644
 +      // the committed-text entries the cache exists for. Measuring fresh for the few
 +      // frames a composition lasts is the cheap side of that trade.
 +      const bool cacheable = annotation.textPreedit.empty();
-+      static std::map<std::tuple<std::string, double, double>, TextMetrics> cache;
++      TextMetricsCache& cache = textMetricsCache();
 +      const auto key =
 +          std::tuple<std::string, double, double>(annotation.text, annotation.width, annotation.textWrapWidth);
 +      if (cacheable) {
@@ -627,7 +681,7 @@ index 09bc2af..d9992a0 100644
        return metrics;
      }
  
-@@ -387,13 +423,26 @@ namespace capture {
+@@ -387,13 +439,26 @@ namespace capture {
      }
  
      void renderText(cairo_t* cr, const Annotation& annotation) {
@@ -656,7 +710,25 @@ index 09bc2af..d9992a0 100644
        pango_cairo_show_layout(cr, layout);
        g_object_unref(layout);
      }
-@@ -507,6 +556,19 @@ namespace capture {
+@@ -494,6 +559,17 @@ namespace capture {
+ 
+   } // namespace
+ 
++  // See annotation_raster.h. The overlay calls this once per capture, right after creating
++  // or re-initialising itself, so a shell.font_family change lands on the next screenshot.
++  void setAnnotationTextFontFamily(std::string family) {
++    if (family.empty() || family == textFontFamily()) {
++      return;
++    }
++    textFontFamily() = std::move(family);
++    // Everything in the memo was measured with the previous face.
++    textMetricsCache().clear();
++  }
++
+   AnnotationRect measureText(const Annotation& annotation) {
+     if (annotation.points.empty()) {
+       return AnnotationRect{};
+@@ -507,6 +583,19 @@ namespace capture {
      };
    }
  
@@ -677,10 +749,28 @@ index 09bc2af..d9992a0 100644
      if (annotation.points.empty()) {
        return;
 diff --git a/src/capture/annotation_raster.h b/src/capture/annotation_raster.h
-index e965ea1..fd53d4e 100644
+index e965ea1..1130528 100644
 --- a/src/capture/annotation_raster.h
 +++ b/src/capture/annotation_raster.h
-@@ -24,6 +24,10 @@ namespace capture {
+@@ -7,10 +7,17 @@
+ #include <cstdint>
+ #include <optional>
+ #include <span>
++#include <string>
+ #include <vector>
+ 
+ namespace capture {
+ 
++  // Font family used for annotation text. Defaults to the generic sans-serif; the overlay
++  // sets it from shell.font_family (AnnotationOverlay::setTextFontFamily) so annotation
++  // text — including the live IME pre-edit drawn alongside it — matches the rest of the
++  // shell instead of a hardcoded face.
++  void setAnnotationTextFontFamily(std::string family);
++
+   // Draws one annotation in canvas-logical coordinates; the caller has already applied
+   // cairo_scale(scale, scale). `background` is the frozen or captured image as a cairo ARGB32
+   // surface in device pixels at the same scale, or nullptr (live mode, where Blur draws nothing).
+@@ -24,6 +31,10 @@ namespace capture {
    // annotation.points[0].y.
    [[nodiscard]] AnnotationRect measureText(const Annotation& annotation);
  
@@ -692,7 +782,7 @@ index e965ea1..fd53d4e 100644
    [[nodiscard]] cairo_surface_t* frozenToCairo(const ScreencopyImage& image);
  
 diff --git a/src/capture/screenshot_service.cpp b/src/capture/screenshot_service.cpp
-index 5f5c4c6..a9842ff 100644
+index 5f5c4c6..ec3c363 100644
 --- a/src/capture/screenshot_service.cpp
 +++ b/src/capture/screenshot_service.cpp
 @@ -613,10 +613,10 @@ namespace {
@@ -708,11 +798,14 @@ index 5f5c4c6..a9842ff 100644
  
  ScreenshotService::~ScreenshotService() = default;
  
-@@ -1215,6 +1215,7 @@ void ScreenshotService::ensureAnnotationOverlay() {
+@@ -1215,6 +1215,10 @@ void ScreenshotService::ensureAnnotationOverlay() {
      m_annotationOverlay = std::make_unique<capture::AnnotationOverlay>();
    }
    m_annotationOverlay->initialize(m_wayland, m_regionRenderContext);
 +  m_annotationOverlay->setTextInputService(m_textInputService);
++  // Annotation text follows shell.font_family (default "sans-serif"), matching the rest of
++  // the shell — including the live IME pre-edit, which is drawn into the same layout.
++  m_annotationOverlay->setTextFontFamily(m_configService.config().shell.fontFamily);
    m_annotationOverlay->setStateSetter([this](std::string_view key, std::string_view value) {
      persistAnnotationToolState(key, value);
    });
