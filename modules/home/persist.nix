@@ -16,6 +16,13 @@
     # 默认值继承本项, 故声明一次即全局生效 —— 挂载时即隐藏, 不需要任何事后
     # remount 补救 (原 modules/nixos/persist.nix 的 hide-persist-mounts 服务
     # 因此退役, 那方案对新增目录还会漏)。
+    # ⚠ 但"挂载时即隐藏"意味着**只对此后新建立的挂载生效**, 已挂载的不受影响:
+    # x-gvfs-hide 是纯用户态选项 (x- 前缀不进内核, 故 findmnt / mountinfo 里
+    # 根本看不到它), GVFS 判断卷是否上报读的是 /run/mount/utab —— 而该文件在
+    # mount(8) 建立挂载的那一刻写入。bind 是**开机时**建立的, systemd 又不会
+    # 因为 .mount 单元的 Options 变了就重挂已激活的挂载, 所以 **rebuild 不生效,
+    # 必须重启**。症状: 启用后文件管理器里仍能看到 apps / code / go —— 同批一共
+    # 22 个陈旧挂载, 其余 19 个是点目录 (默认不显示) 才没暴露出来。
     hideMounts = true;
     directories = [
       # 编译链缓存/配置 (大、下载慢, 重装后保留): maven/gradle/rust/go/node/pnpm/npm/uv
