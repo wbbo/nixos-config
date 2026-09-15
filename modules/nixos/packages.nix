@@ -93,6 +93,13 @@
     }))
     yazi
 
+    ### 图像
+    # imv: Wayland 原生图像查看器 (wlroots 系合成器走 xdg-shell/layer-shell,
+    # 无 X11 依赖), 键盘驱动 (缩放/平移/翻页), 支持 GIF 与动画帧。
+    # 装系统级而非 home.packages: 自带 imv.desktop, Nautilus "打开方式" 与
+    # 浏览器的图片打开动作都需要它在 XDG_DATA_DIRS 里能被扫到。
+    imv
+
     ### 终端装饰
     cmatrix
 
