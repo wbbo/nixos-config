@@ -44,17 +44,15 @@
     stateVersion = "26.05";
   };
 
-  # 用户会话语言与 niri 的 environment{} 块 (modules/home/niri/config.kdl) 对齐。
-  # 必须用 systemd.user.sessionVariables 而非 home.sessionVariables ——
-  # 后者只进 shell source 的 hm-session-vars.sh, 而 ~/.config/environment.d/
-  # 10-home-manager.conf (systemd user manager 的环境来源, 亦即 D-Bus 激活
-  # 程序的继承源) 由前者生成 (nix eval 实测确认)。
-  # 场景: niri 只给自己 spawn 的子进程注入 LANG=zh_CN.UTF-8, 经 D-Bus 激活
-  # 拉起的程序 (如从 Firefox 点"打开所在文件夹"唤起 Nautilus) 走的是 systemd
-  # user manager —— 那里默认 en_US.UTF-8 且无 LC_MESSAGES, gettext 解析不到
-  # 中文 (实测表现: nautilus-open-any-terminal 右键菜单回退英文)。补上此项使
-  # 两条启动路径语言一致; 需重新登录 (systemd user manager 启动时读取) 生效。
-  systemd.user.sessionVariables.LANG = "zh_CN.UTF-8";
+  # 用户会话语言统一由 modules/nixos/greetd.nix 的 greetd 单元 Environment
+  # 注入 (经 niri-session 的 `systemctl --user import-environment` 进入
+  # systemd user manager = D-Bus 激活程序的继承源)。
+  #
+  # 此处**不要**再写 `systemd.user.sessionVariables.LANG`: 它生成的
+  # ~/.config/environment.d/10-home-manager.conf 至多只在 user manager
+  # 启动那一刻生效, 而登录时 niri-session 那句 import-environment 会用
+  # 会话的值 (en_US, 来自 PID1/locale.conf) 整体覆盖它 —— 2026-09-12 曾以
+  # 此为修复, 09-16 实测证伪 (Nautilus 经 D-Bus 激活仍是英文), 已移除。
 
   # XDG 用户目录: 统一声明为英文路径 (HM 默认值即 $HOME/Downloads 等英文名)。
   # 此前系统完全没有 ~/.config/user-dirs.dirs —— HM 的 xdg.userDirs 默认
