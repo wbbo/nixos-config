@@ -13,10 +13,10 @@ index f9904c6..e3a1ccd 100644
    std::unique_ptr<MprisService> m_mprisService;
    std::unique_ptr<PowerProfilesService> m_powerProfilesService;
 diff --git a/src/capture/annotation_document.h b/src/capture/annotation_document.h
-index 3a552fc..ecdc59d 100644
+index 3a552fc..0109ff6 100644
 --- a/src/capture/annotation_document.h
 +++ b/src/capture/annotation_document.h
-@@ -56,6 +56,22 @@ namespace capture {
+@@ -56,6 +56,23 @@ namespace capture {
      AnnotationColor fill{.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 0.0F}; // Rectangle/Circle; a == 0 means no fill
      std::vector<AnnotationPoint> points;
      std::string text; // Text: content; Numbering: label
@@ -29,8 +29,9 @@ index 3a552fc..ecdc59d 100644
 +    // before the annotation is committed.
 +    bool textSelected = false;
 +    // Editor-only state, same contract as textSelected: the live IME pre-edit (pinyin,
-+    // kana, ...) for the Text tool. Drawn after text with a single underline so the
-+    // composing string is visible while the IME is still composing. The overlay claims
++    // kana, ...) for the Text tool. Drawn after text as ordinary glyphs — no underline or
++    // other marker, matching how noctalia's own text fields show the composing string.
++    // The overlay claims
 +    // PREEDIT_SHOWN (see preeditVisible in textInputState), which is a promise that the
 +    // client draws the pre-edit itself — hint-respecting IMEs then keep it out of their
 +    // own window, so nothing would be visible anywhere if this were left unrendered.
@@ -524,7 +525,7 @@ index e70ed60..b4373ed 100644
      double m_pointerX = 0.0;
      double m_pointerY = 0.0;
 diff --git a/src/capture/annotation_raster.cpp b/src/capture/annotation_raster.cpp
-index 09bc2af..4dd2337 100644
+index 09bc2af..d9992a0 100644
 --- a/src/capture/annotation_raster.cpp
 +++ b/src/capture/annotation_raster.cpp
 @@ -5,6 +5,7 @@
@@ -548,7 +549,7 @@ index 09bc2af..4dd2337 100644
      };
  
      [[nodiscard]] PangoFontDescription* makeTextFont(double sizePx) {
-@@ -45,7 +52,28 @@ namespace capture {
+@@ -45,7 +52,20 @@ namespace capture {
        pango_layout_set_font_description(layout, font);
        pango_font_description_free(font);
        pango_layout_set_single_paragraph_mode(layout, TRUE);
@@ -557,28 +558,20 @@ index 09bc2af..4dd2337 100644
 +        pango_layout_set_width(layout, static_cast<int>(annotation.textWrapWidth * PANGO_SCALE));
 +        pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
 +      }
-+      if (annotation.textPreedit.empty()) {
-+        pango_layout_set_text(layout, annotation.text.c_str(), -1);
-+        return;
-+      }
-+      // Live IME pre-edit: laid out as ONE string with the committed text so that
-+      // wrapping, measurement and the caret all agree, with the pre-edit range
-+      // underlined — the conventional "typed but not committed yet" marker. Pango
-+      // attribute indices are byte offsets into the layout text, and the pre-edit is
-+      // appended verbatim, so text.size() is the boundary between the two.
++      // Live IME pre-edit (see textPreedit in annotation_document.h) is appended verbatim
++      // and laid out as ONE string with the committed text so wrapping, measurement and
++      // the caret all agree.
++      // Deliberately NO underline or other "uncommitted" styling: this matches how
++      // noctalia's own text fields present the composing string (the launcher inserts it
++      // into its value and renders it as ordinary glyphs). On a drawn canvas an underline
++      // reads as annotation styling rather than as input state, and users expect the
++      // pre-edit here to look like the one they already see in the launcher.
 +      const std::string composed = annotation.text + annotation.textPreedit;
 +      pango_layout_set_text(layout, composed.c_str(), -1);
-+      PangoAttrList* attrs = pango_attr_list_new();
-+      PangoAttribute* underline = pango_attr_underline_new(PANGO_UNDERLINE_SINGLE);
-+      underline->start_index = static_cast<guint>(annotation.text.size());
-+      underline->end_index = static_cast<guint>(composed.size());
-+      pango_attr_list_insert(attrs, underline);
-+      pango_layout_set_attributes(layout, attrs);
-+      pango_attr_list_unref(attrs);
      }
  
      [[nodiscard]] TextMetrics measureTextUncached(const Annotation& annotation) {
-@@ -59,6 +87,9 @@ namespace capture {
+@@ -59,6 +79,9 @@ namespace capture {
        pango_layout_get_pixel_size(layout, &layoutWidth, &layoutHeight);
        const double baseline = static_cast<double>(pango_layout_get_baseline(layout)) / PANGO_SCALE;
  
@@ -588,7 +581,7 @@ index 09bc2af..4dd2337 100644
        g_object_unref(layout);
        cairo_destroy(cr);
        cairo_surface_destroy(surface);
-@@ -68,23 +99,36 @@ namespace capture {
+@@ -68,23 +91,36 @@ namespace capture {
            .top = -baseline,
            .width = static_cast<double>(layoutWidth),
            .height = static_cast<double>(layoutHeight),
@@ -634,7 +627,15 @@ index 09bc2af..4dd2337 100644
        return metrics;
      }
  
-@@ -391,9 +435,19 @@ namespace capture {
+@@ -387,13 +423,26 @@ namespace capture {
+     }
+ 
+     void renderText(cairo_t* cr, const Annotation& annotation) {
+-      if (annotation.text.empty()) {
++      // The pre-edit counts as content: composing into an otherwise empty annotation has
++      // to be visible, otherwise the first pinyin only shows up after a character has
++      // already been committed (this early return used to swallow it).
++      if (annotation.text.empty() && annotation.textPreedit.empty()) {
          return;
        }
        const TextMetrics metrics = textMetrics(annotation);
@@ -655,7 +656,7 @@ index 09bc2af..4dd2337 100644
        pango_cairo_show_layout(cr, layout);
        g_object_unref(layout);
      }
-@@ -507,6 +561,19 @@ namespace capture {
+@@ -507,6 +556,19 @@ namespace capture {
      };
    }
  
