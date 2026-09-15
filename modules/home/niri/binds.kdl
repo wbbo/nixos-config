@@ -133,18 +133,16 @@ binds {
     Mod+MouseBack    { focus-window-down; }
 
     // -------- 截图 --------
-    // 两条都走 noctalia 内建截图 (screencopy 直连, 无外部进程依赖)。
-    // 输出统一由 noctalia.nix 的 [shell.screenshot] 管: 落 ~/Pictures/screenshot/
-    // + %Y-%m-%d_%H-%M-%S 命名 (区域截图自动加 -region 后缀, 便于区分来源)。
-    // 区域:     Mod+Shift+S → 框选 (默认选区前先冻结画面) → 标注器 → 保存/复制
-    // 冻结标注: Alt+Shift+S → 整屏原地冻结 → 原位涂画/裁剪 → 保存/复制;
-    //           冻结前还可先在运行中的应用画面上 live 圈画 (演示场景, 区域模式做不到)。
+    // 走 noctalia 内建截图 (screencopy 直连, 无外部进程依赖)。
+    // 输出由 noctalia.nix 的 [shell.screenshot] 管: 落 ~/Pictures/screenshot/
+    // + %Y-%m-%d_%H-%M-%S 命名。
+    // 冻结标注: Mod+Shift+S → 整屏原地冻结 → 原位涂画/裁剪 → 保存/复制;
+    //           冻结前还可先在运行中的应用画面上 live 圈画 (演示场景)。
     //
     // repeat=false: niri 键位默认按住会重复触发, 而 spawn-sh 型动作为每次起
     // 新进程 —— 实测同一次按键在 1 秒内产生两个 app-niri-sh-* scope, 表现为
     // "按一次弹出多个窗口"。cooldown-ms 再挡一道重复事件 (抑制期内直接忽略)。
-    Mod+Shift+S      repeat=false cooldown-ms=400 { spawn-sh "noctalia msg screenshot-region"; }
-    Alt+Shift+S      repeat=false cooldown-ms=400 { spawn-sh "noctalia msg screenshot-annotate"; }
+    Mod+Shift+S      repeat=false cooldown-ms=400 { spawn-sh "noctalia msg screenshot-annotate"; }
     //
     // ★ 历史 (2026-09-14 收敛): 这里原有两套 grim|slurp|satty 链路 ——
     //   Mod+Shift+S (slurp 框选) 与 Mod+Ctrl+Shift+S (grim 全屏)。
@@ -157,6 +155,12 @@ binds {
     //   失去的特性: satty 链路在进标注器**之前**就已 wl-copy, 标注中途关窗
     //   原图也不丢; noctalia 是完成时才复制。若日后需要这个抗中断特性, 可从
     //   git 历史 (fa7ceb5 之前) 找回原绑定。
+    //
+    // ★ 2026-09-15: 区域截图 (screenshot-region) 绑定移除 —— 冻结标注模式
+    //   本身支持裁剪, 已覆盖框选场景, 两条并存徒增混淆。原 Alt+Shift+S
+    //   的冻结标注改为占用 Mod+Shift+S (原区域键位), 单一入口。
+    //   noctalia 的 screenshot-region 命令本身仍在 (控制中心按钮等未动),
+    //   仅不再有键位绑定。
 
     // -------- 录屏 --------
     // Mod+Alt+R 切换 (开始/停止), 全屏 + 系统声音, 编码器按机器能力自动协商

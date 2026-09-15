@@ -1,5 +1,5 @@
 # Nautilus 文件管理器增强
-{ pkgs, ... }:
+{ pkgs, lib, config, ... }:
 {
   # "在终端中打开"**顶层**右键菜单项 —— 用社区扩展 nautilus-open-any-terminal
   # (python 扩展, 由 nautilus-python 加载)。
@@ -30,6 +30,38 @@
   dconf.settings."com/github/stunkymonkey/nautilus-open-any-terminal" = {
     terminal = "kitty";
   };
+
+  # ⚠ 过期字节码陷阱 —— 每次激活清一次 python 缓存 (2026-09-15 实测定位)。
+  #
+  # 症状: 右键「在 kitty 中打开」无声消失 (菜单项整个不见, 无任何报错)。
+  #
+  # 根因: python 把扩展编译成 __pycache__/*.pyc, 缓存有效性按 (源文件 mtime,
+  # 源文件 size) 校验。而 nix 这两项都"骗"得过校验:
+  #   - store 文件 mtime 被统一归一化为 epoch 1 (所有代际完全相同);
+  #   - store 路径 hash 恒为 32 字符, 包重建后 .py 里烘焙的绝对路径 (该扩展
+  #     把自身 gschemas 目录写死在源码里) 换成新 hash, **字节数分毫不差**。
+  # 于是包一重建, 缓存仍被判有效 → 执行旧字节码 → 里面写死的 store 路径
+  # 已被 GC → 模块级 Gio.SettingsSchemaSource.new_from_directory 抛 GError
+  # → import 失败。nautilus-python 只把 traceback 打到 stderr, 而 nautilus
+  # 经 niri spawn, stderr 不入 journal, 故表现为完全静默 —— 除非手工
+  # 复现导入 (见下) 否则看不出所以然。
+  #
+  # 为什么放激活钩子而不是手工删一次: 触发条件是"包重建", 而包重建只可能
+  # 随 rebuild 发生 (flake update / nixpkgs 变更), 激活钩子恰好每次 rebuild
+  # 都跑, 覆盖全部触发路径。代价仅是下次启动 nautilus 重新编译一次 (毫秒级)。
+  #
+  # 手工复现/验证 (需完整 env: GI_TYPELIB_PATH 取自运行中的 nautilus 进程,
+  # 加载器自带 pygobject 的 site.addsitedir 补丁, 故 PYTHONPATH 指向它即可):
+  #   tr '\0' '\n' < /proc/$(pgrep -x nautilus | head -1)/environ | grep -E '^(GI|XDG|GIO|GST)' > /tmp/env.sh
+  #   PYTHONPATH=<pygobject>/lib/python3.13/site-packages python3 -c "
+  #     import gi; gi.require_version('Nautilus','4.1'); gi.require_version('Gtk','4.0')
+  #     import importlib.util as u; s=u.spec_from_file_location('m','<扩展.py>')
+  #     m=u.module_from_spec(s); s.loader.exec_module(m); print('IMPORT OK')"
+  # 注意版本号要与加载器一致 (nautilus-python 4.1.0 → Nautilus 4.1; 写 4.0 会
+  # 报 "Namespace Nautilus not available")。
+  home.activation.nautilus-python-pycache = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run rm -rf $VERBOSE_ARG "${config.home.homeDirectory}/.local/share/nautilus-python/extensions/__pycache__"
+  '';
 
   # 目录默认处理器 —— 数据层补一条, 专治「Steam 里点浏览文件夹却打开了 kitty」。
   #
