@@ -26,8 +26,13 @@
 #      shell.font_family (与 RenderContext 同一个来源, 默认 sans-serif); 字体变更时
 #      一并清空度量缓存, 避免用旧字形量出的尺寸。
 #
-# 基础版本: 补丁在上游 2856ec3 上开发, 在 flake input 锁定的 18bd8d63 上干净应用
-# (仅行偏移 -7/-4, 无 fuzz/FAILED); 上游 input 升级后需重新核对应用情况。
+# 基础版本: 补丁在上游 2856ec3 上开发。2026-09-15 input 升级到主分支 e4eb0ff
+# (自 18bd8d63 起 20 个提交), 重新干跑验证: 仅行偏移 +7/+4, 无 fuzz/FAILED。
+# 这 20 个提交只碰到本补丁 8 个文件中的 2 个 —— application.h 的 secret service
+# collection 监听 (+9 行, 在 m_secretService* 成员区) 与 screenshot_service.cpp 的
+# skipAnnotateOnCopySave / closeOnSave 分支 (+8/-2 行, 在 ensureAnnotationOverlay
+# 约 1280 行处; 补丁的字体注入 hunk 在 1219 行, 相隔 60 行), 均不重叠、无语义冲突。
+# 上游 input 再升级后需同样重新核对应用情况。
 #
 # 上游合并全部内容后: 删本文件 + patch 文件 + 两处引用, 回到
 # noctalia.packages.<system>.default。
