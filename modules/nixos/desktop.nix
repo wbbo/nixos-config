@@ -33,6 +33,40 @@
   # 无 nautilus.desktop 别名, 写错则静默无效)。
   xdg.mime.defaultApplications."inode/directory" = "org.gnome.Nautilus.desktop";
 
+  ### 图片的默认处理器 —— 显式钉死 imv-dir (见 packages.nix 的 imv 条目)
+  # 与上一条**同源**的坑: 不显式声明时 xdg 按 desktop 文件名兜底, 而
+  # imv-dir.desktop 字母序排在 imv.desktop 之前 ('-' 0x2D < '.' 0x2E) 因而
+  # 胜出 —— 装 imv 后实测 17 个类型全部落到它头上。但这是**碰巧**: 任何新装
+  # 的包只要带一个字母序更靠前的 image/* 声明就会静默抢走, 与当年
+  # kitty-open.desktop 抢走 inode/directory 是同一个机制。
+  # 17 条逐一镜像 imv-dir.desktop 的 MimeType 声明 (mimeapps.list 不支持
+  # image/* 通配, 只能枚举; 规则 = "imv-dir 声明什么就给它什么")。含
+  # image/svg+xml: imv 经 librsvg 后端能渲染静态 SVG (无动画/交互)。
+  # **行为**: imv-dir <file> 展开为 imv -n <file> <dirname> —— 双击一张图 =
+  # 打开其所在文件夹作播放列表并选中该张 (可左右翻页), 非单图单窗。
+  # 想换看图器改这里; 用户级 ~/.config/mimeapps.list 优先级更高,
+  # Nautilus "属性 → 打开方式 → 设为默认" 写入该文件即覆盖本钉死。
+  # 注: xcf/psd/cr2 等 imv 不支持的类型不在覆盖范围, 仍无默认处理器。
+  xdg.mime.defaultApplications = {
+    "image/x-farbfeld" = "imv-dir.desktop";
+    "image/tiff" = "imv-dir.desktop";
+    "image/tiff-fx" = "imv-dir.desktop";
+    "image/png" = "imv-dir.desktop";
+    "image/x-png" = "imv-dir.desktop";
+    "image/jpeg" = "imv-dir.desktop";
+    "image/jpg" = "imv-dir.desktop";
+    "image/pjpeg" = "imv-dir.desktop";
+    "image/svg+xml" = "imv-dir.desktop";
+    "image/gif" = "imv-dir.desktop";
+    "image/bmp" = "imv-dir.desktop";
+    "image/x-bmp" = "imv-dir.desktop";
+    "image/heif" = "imv-dir.desktop";
+    "image/avif" = "imv-dir.desktop";
+    "image/jxl" = "imv-dir.desktop";
+    "image/webp" = "imv-dir.desktop";
+    "image/qoi" = "imv-dir.desktop";
+  };
+
   ### Wayland 会话环境变量
   environment.sessionVariables = {
     XDG_CURRENT_DESKTOP = "niri:sway";
