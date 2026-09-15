@@ -404,16 +404,22 @@ in {
     # action 取值: lock / screen_off / suspend / custom (custom 配 command)。
     # 用 `noctalia config validate <file>` 可离线校验候选写法。
     # behavior_order 决定执行顺序 (TOML 表无序, 显式声明)。
+    # timeout 与 locked_timeout 的分工 (源码 idle_manager.cpp:94
+    # effectiveTimeoutSeconds): timeout = **未锁屏时**的闲置秒数,
+    # locked_timeout = **已锁屏后**再等多久触发 (0 = 沿用 timeout)。
+    # 会话一上锁, 各行为的探针即按 locked_timeout 重新武装。
     # ============================================================
     [idle]
     behavior_order = ["lock-screen", "screen-off"]
-    # 触发前全屏渐暗秒数 (0 = 关闭); 兼作 "Idle Dim" 视觉预告
+    # 触发前全屏渐暗秒数 (0 = 关闭); 兼作 "Idle Dim" 视觉预告。
+    # 注意: 渐暗层的填充是 rgba(0,0,0,1) 且不透明度渐变到 1.0 —— 它是**渐黑**,
+    # 不是变暗 (idle_grace_overlay.cpp:230)。
     pre_action_fade_seconds = 5
 
     [idle.behavior.lock-screen]
     action = "lock"
-    timeout = 300          # 闲置 5 分钟 → 自动锁屏
-    locked_timeout = 300
+    timeout = 600          # 闲置 10 分钟 → 自动锁屏 (与 screen-off 同步)
+    locked_timeout = 600
 
     [idle.behavior.screen-off]
     action = "screen_off"
