@@ -13,10 +13,10 @@ index f9904c6..e3a1ccd 100644
    std::unique_ptr<MprisService> m_mprisService;
    std::unique_ptr<PowerProfilesService> m_powerProfilesService;
 diff --git a/src/capture/annotation_document.h b/src/capture/annotation_document.h
-index 3a552fc..bafb5a9 100644
+index 3a552fc..ecdc59d 100644
 --- a/src/capture/annotation_document.h
 +++ b/src/capture/annotation_document.h
-@@ -56,6 +56,14 @@ namespace capture {
+@@ -56,6 +56,22 @@ namespace capture {
      AnnotationColor fill{.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 0.0F}; // Rectangle/Circle; a == 0 means no fill
      std::vector<AnnotationPoint> points;
      std::string text; // Text: content; Numbering: label
@@ -28,11 +28,19 @@ index 3a552fc..bafb5a9 100644
 +    // select-all flag (Ctrl+A), drawn as a highlight behind the glyphs and cleared
 +    // before the annotation is committed.
 +    bool textSelected = false;
++    // Editor-only state, same contract as textSelected: the live IME pre-edit (pinyin,
++    // kana, ...) for the Text tool. Drawn after text with a single underline so the
++    // composing string is visible while the IME is still composing. The overlay claims
++    // PREEDIT_SHOWN (see preeditVisible in textInputState), which is a promise that the
++    // client draws the pre-edit itself — hint-respecting IMEs then keep it out of their
++    // own window, so nothing would be visible anywhere if this were left unrendered.
++    // Cleared on commit, on cancelled composition and when the text input ends.
++    std::string textPreedit;
    };
  
    struct AnnotationRect {
 diff --git a/src/capture/annotation_overlay.cpp b/src/capture/annotation_overlay.cpp
-index d0fe592..fc66ebe 100644
+index d0fe592..e510998 100644
 --- a/src/capture/annotation_overlay.cpp
 +++ b/src/capture/annotation_overlay.cpp
 @@ -29,6 +29,7 @@
@@ -127,7 +135,7 @@ index d0fe592..fc66ebe 100644
    } // namespace
  
    AnnotationToolState defaultAnnotationToolState() {
-@@ -341,6 +412,147 @@ namespace capture {
+@@ -341,6 +412,185 @@ namespace capture {
      m_renderContext = renderContext;
    }
  
@@ -172,11 +180,18 @@ index d0fe592..fc66ebe 100644
 +    if (target == nullptr || target->points.empty()) {
 +      return state;
 +    }
-+    // No surrounding text and no client-drawn preedit: the caret is all the IME needs, and
-+    // claiming preedit support we never render would make hint-respecting IMEs hide the
-+    // composition (zwp_text_input_v3 content hints).
++    // No surrounding text: an annotation is a bare string with no surrounding context to
++    // report, and claiming otherwise would have IMEs expect text we cannot supply.
++    //
++    // Pre-edit IS claimed (preeditVisible = true) because we draw it ourselves (see
++    // textPreedit in annotation_document.h and the underline handling in
++    // annotation_raster.cpp). This is a promise the IME relies on: with the hint set,
++    // IMEs like fcitx5 keep the composition out of their own window, so a client that
++    // claims it and renders nothing leaves the pinyin invisible *everywhere*. That was
++    // exactly the original bug — the flag was false here, no drawing existed, and the
++    // IME's own preedit line never appeared either.
 +    state.sendSurroundingText = false;
-+    state.preeditVisible = false;
++    state.preeditVisible = true;
 +    // Anchor the candidate window at the caret: end of the drawn text plus any live
 +    // preedit, one font-size tall. Annotation points are canvas-local (see
 +    // onCanvasPress, which subtracts canvasRect), while zwp_text_input_v3 wants
@@ -241,10 +256,26 @@ index d0fe592..fc66ebe 100644
 +    if (commitsText) {
 +      target->text.append(edit.commitText);
 +      m_imePreedit.clear();
++      target->textPreedit.clear();
 +      changed = true;
 +    }
 +    if (edit.hasPreedit) {
 +      m_imePreedit = edit.preeditText;
++      // Mirror onto the annotation: that field is what the raster draws, and a pre-edit
++      // change alone MUST count as a change — the early return below would otherwise
++      // leave the drawn pinyin a keystroke behind.
++      if (target->textPreedit != m_imePreedit) {
++        target->textPreedit = m_imePreedit;
++        changed = true;
++      }
++    } else if (!m_imePreedit.empty()) {
++      // Composition ended without committing (IME cancelled): drop the pre-edit in both
++      // places so neither the drawn text nor the caret anchor keeps a string that is
++      // gone. An IME that clears by sending an empty preedit_string takes the branch
++      // above instead; this covers the ones that simply stop sending.
++      m_imePreedit.clear();
++      target->textPreedit.clear();
++      changed = true;
 +    }
 +    if (edit.submit) {
 +      // An IME may report Return as a submit action instead of forwarding the key, which
@@ -266,7 +297,22 @@ index d0fe592..fc66ebe 100644
 +    }
 +  }
 +
-+  void AnnotationOverlay::textInputResetPreedit() { m_imePreedit.clear(); }
++  void AnnotationOverlay::textInputResetPreedit() {
++    m_imePreedit.clear();
++    Annotation* target = activeTextAnnotation();
++    if (target == nullptr || target->textPreedit.empty()) {
++      return;
++    }
++    // Same reasoning as the cancel branch in handleAction: a pre-edit left on the
++    // annotation would keep drawing pinyin the IME has already dropped.
++    target->textPreedit.clear();
++    if (m_textInstance != nullptr) {
++      redrawActive(*m_textInstance);
++      if (m_textInstance->surface != nullptr) {
++        m_textInstance->surface->requestUpdateOnly();
++      }
++    }
++  }
 +
 +  void AnnotationOverlay::textInputActivated(TextInputService& /*service*/) {}
 +
@@ -275,7 +321,7 @@ index d0fe592..fc66ebe 100644
    void AnnotationOverlay::setExportCallback(ExportCallback callback) { m_onExport = std::move(callback); }
  
    void AnnotationOverlay::setFreezeCallback(FreezeCallback callback) { m_onFreeze = std::move(callback); }
-@@ -460,6 +672,7 @@ namespace capture {
+@@ -460,6 +710,7 @@ namespace capture {
      m_gestureInstance = nullptr;
      m_moveIndex.reset();
      m_cropDragging = false;
@@ -283,7 +329,7 @@ index d0fe592..fc66ebe 100644
      m_textInstance = nullptr;
      m_textIndex.reset();
      destroySurfaces();
-@@ -570,6 +783,10 @@ namespace capture {
+@@ -570,6 +821,10 @@ namespace capture {
    }
  
    void AnnotationOverlay::destroySurfaces() {
@@ -294,7 +340,7 @@ index d0fe592..fc66ebe 100644
      // A gesture cut short by the teardown (Freeze mid-drag, an output going away) has a
      // snapshot pushed and a half-drawn annotation appended; roll it back rather than leave the
      // document with an interaction nobody can close.
-@@ -1577,12 +1794,14 @@ namespace capture {
+@@ -1577,12 +1832,14 @@ namespace capture {
          cairo_scale(cr, inst.canvasScale, inst.canvasScale);
          renderAnnotation(cr, *target, inst.backgroundSurface, inst.canvasScale);
          if (editingText) {
@@ -312,7 +358,7 @@ index d0fe592..fc66ebe 100644
            );
          }
          cairo_restore(cr);
-@@ -1612,10 +1831,25 @@ namespace capture {
+@@ -1612,10 +1869,25 @@ namespace capture {
        if (surface == nullptr || !texture.valid()) {
          return;
        }
@@ -342,7 +388,7 @@ index d0fe592..fc66ebe 100644
        if (width <= 0 || height <= 0) {
          return;
        }
-@@ -1839,10 +2073,14 @@ namespace capture {
+@@ -1839,10 +2111,14 @@ namespace capture {
                .fill = AnnotationColor{.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 0.0F},
                .points = {point},
                .text = {},
@@ -357,7 +403,7 @@ index d0fe592..fc66ebe 100644
        redrawActive(inst);
        break;
      }
-@@ -2036,8 +2274,12 @@ namespace capture {
+@@ -2036,8 +2312,12 @@ namespace capture {
      Instance& inst = *m_textInstance;
      AnnotationDocument& doc = documentFor(inst);
      Annotation* target = doc.active();
@@ -370,7 +416,7 @@ index d0fe592..fc66ebe 100644
      m_textIndex.reset();
      m_textInstance = nullptr;
      if (discard) {
-@@ -2061,6 +2303,7 @@ namespace capture {
+@@ -2061,6 +2341,7 @@ namespace capture {
      }
      Instance& inst = *m_textInstance;
      AnnotationDocument& doc = documentFor(inst);
@@ -378,7 +424,7 @@ index d0fe592..fc66ebe 100644
      m_textIndex.reset();
      m_textInstance = nullptr;
      doc.discardInteraction();
-@@ -2094,14 +2337,14 @@ namespace capture {
+@@ -2094,14 +2375,14 @@ namespace capture {
        return true;
      }
  
@@ -398,7 +444,7 @@ index d0fe592..fc66ebe 100644
      doc.touch();
      inst.renderedGeneration = doc.generation();
      redrawActive(inst);
-@@ -2280,6 +2523,8 @@ namespace capture {
+@@ -2280,6 +2561,8 @@ namespace capture {
      const std::size_t index = toolIndex(AnnotationTool::Text);
      target->width = m_tools.width[index];
      target->stroke = m_tools.color[index];
@@ -478,7 +524,7 @@ index e70ed60..b4373ed 100644
      double m_pointerX = 0.0;
      double m_pointerY = 0.0;
 diff --git a/src/capture/annotation_raster.cpp b/src/capture/annotation_raster.cpp
-index 09bc2af..1a3b3b5 100644
+index 09bc2af..4dd2337 100644
 --- a/src/capture/annotation_raster.cpp
 +++ b/src/capture/annotation_raster.cpp
 @@ -5,6 +5,7 @@
@@ -502,18 +548,37 @@ index 09bc2af..1a3b3b5 100644
      };
  
      [[nodiscard]] PangoFontDescription* makeTextFont(double sizePx) {
-@@ -45,6 +52,10 @@ namespace capture {
+@@ -45,7 +52,28 @@ namespace capture {
        pango_layout_set_font_description(layout, font);
        pango_font_description_free(font);
        pango_layout_set_single_paragraph_mode(layout, TRUE);
+-      pango_layout_set_text(layout, annotation.text.c_str(), -1);
 +      if (annotation.textWrapWidth > 0.0) {
 +        pango_layout_set_width(layout, static_cast<int>(annotation.textWrapWidth * PANGO_SCALE));
 +        pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
 +      }
-       pango_layout_set_text(layout, annotation.text.c_str(), -1);
++      if (annotation.textPreedit.empty()) {
++        pango_layout_set_text(layout, annotation.text.c_str(), -1);
++        return;
++      }
++      // Live IME pre-edit: laid out as ONE string with the committed text so that
++      // wrapping, measurement and the caret all agree, with the pre-edit range
++      // underlined — the conventional "typed but not committed yet" marker. Pango
++      // attribute indices are byte offsets into the layout text, and the pre-edit is
++      // appended verbatim, so text.size() is the boundary between the two.
++      const std::string composed = annotation.text + annotation.textPreedit;
++      pango_layout_set_text(layout, composed.c_str(), -1);
++      PangoAttrList* attrs = pango_attr_list_new();
++      PangoAttribute* underline = pango_attr_underline_new(PANGO_UNDERLINE_SINGLE);
++      underline->start_index = static_cast<guint>(annotation.text.size());
++      underline->end_index = static_cast<guint>(composed.size());
++      pango_attr_list_insert(attrs, underline);
++      pango_layout_set_attributes(layout, attrs);
++      pango_attr_list_unref(attrs);
      }
  
-@@ -59,6 +70,9 @@ namespace capture {
+     [[nodiscard]] TextMetrics measureTextUncached(const Annotation& annotation) {
+@@ -59,6 +87,9 @@ namespace capture {
        pango_layout_get_pixel_size(layout, &layoutWidth, &layoutHeight);
        const double baseline = static_cast<double>(pango_layout_get_baseline(layout)) / PANGO_SCALE;
  
@@ -523,7 +588,7 @@ index 09bc2af..1a3b3b5 100644
        g_object_unref(layout);
        cairo_destroy(cr);
        cairo_surface_destroy(surface);
-@@ -68,14 +82,18 @@ namespace capture {
+@@ -68,23 +99,36 @@ namespace capture {
            .top = -baseline,
            .width = static_cast<double>(layoutWidth),
            .height = static_cast<double>(layoutHeight),
@@ -538,13 +603,38 @@ index 09bc2af..1a3b3b5 100644
        // so results are memoized per (content, font size).
 -      static std::map<std::pair<std::string, double>, TextMetrics> cache;
 -      const auto key = std::pair<std::string, double>(annotation.text, annotation.width);
+-      const auto it = cache.find(key);
+-      if (it != cache.end()) {
+-        return it->second;
+-      }
+-      if (cache.size() > 512) {
+-        cache.clear();
++      // Pre-edit states are deliberately NOT memoized: they change on every keystroke of
++      // an active composition, so keying on them would churn the 512-entry cap and evict
++      // the committed-text entries the cache exists for. Measuring fresh for the few
++      // frames a composition lasts is the cheap side of that trade.
++      const bool cacheable = annotation.textPreedit.empty();
 +      static std::map<std::tuple<std::string, double, double>, TextMetrics> cache;
 +      const auto key =
 +          std::tuple<std::string, double, double>(annotation.text, annotation.width, annotation.textWrapWidth);
-       const auto it = cache.find(key);
-       if (it != cache.end()) {
-         return it->second;
-@@ -391,9 +409,19 @@ namespace capture {
++      if (cacheable) {
++        const auto it = cache.find(key);
++        if (it != cache.end()) {
++          return it->second;
++        }
++        if (cache.size() > 512) {
++          cache.clear();
++        }
+       }
+       const TextMetrics metrics = measureTextUncached(annotation);
+-      cache.emplace(key, metrics);
++      if (cacheable) {
++        cache.emplace(key, metrics);
++      }
+       return metrics;
+     }
+ 
+@@ -391,9 +435,19 @@ namespace capture {
          return;
        }
        const TextMetrics metrics = textMetrics(annotation);
@@ -565,7 +655,7 @@ index 09bc2af..1a3b3b5 100644
        pango_cairo_show_layout(cr, layout);
        g_object_unref(layout);
      }
-@@ -507,6 +535,19 @@ namespace capture {
+@@ -507,6 +561,19 @@ namespace capture {
      };
    }
  
