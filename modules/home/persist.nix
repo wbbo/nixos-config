@@ -78,6 +78,18 @@
       # 不持久化则重装(@root 重建)后需重配全部邮箱账户。
       # 注意: IMAP 账户的离线邮件缓存也在其中, 会随使用增长。
       ".thunderbird"
+      # Firefox profile —— 数据在 XDG 路径 ~/.config/mozilla (不是 ~/.mozilla,
+      # 后者只剩 HM 生成的 native-messaging-hosts 软链, 重装后 HM 自建, 不必持久化):
+      # cookie / 登录凭据(cert9.db, logins.json) / 书签与历史(places.sqlite) /
+      # 扩展数据全在这里。
+      # **曾漏网**: 2026-09-15 重装(@root 重建)后整棵 profile 随之消失, 表现为
+      # "cookie 全部失效、所有站点掉登录"; 证据是 profile 内 compatibility.ini /
+      # cert9.db 的时间戳 = 重装后首启时刻(22:40), 旧数据无痕。Thunderbird 一直在
+      # 清单里, 唯独浏览器被漏掉。
+      # 注: 缓存目录 ~/.cache/mozilla 体积大且可重建, 不持久化;
+      # search.json.mozlz4 由 HM 管(火狐运行时会把它改写成实体文件, 见 build.sh
+      # 预检告警), firefox.nix 的 search.force = true 会在激活时强制覆盖回软链。
+      ".config/mozilla"
       # Flatpak 应用数据 (系统级装 /var/lib/flatpak 跨 rebuild 天然保留, 但
       # ~/.var/app/<app> 在 @root 属家目录需显式持久化):
       # - com.usebottles.bottles: Bottles wineprefix + 下载的 runner/组件
