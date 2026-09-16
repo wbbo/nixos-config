@@ -109,6 +109,22 @@
       # 需先 cp -a 到 /persist/home/wbb/.local/share/ 再清空原目录留作挂载点,
       # 否则 bind mount 会把已有数据整个遮住。
       ".local/share/Steam"
+      # HMCL (Minecraft 启动器) —— 数据**分三处**, 缺一不可 (2026-09-16 实测):
+      #   1. ~/.hmcl —— 工作目录相对路径 (nixpkgs wrapper 的 `cd $HOME` 把它定在
+      #      家目录; 从别处启动就会跑到别处, 这是相对路径语义)。含 logs / config
+      #      (game-directories、launcher-settings、game-settings) / state / cache。
+      #   2. ~/.local/share/hmcl —— XDG 数据目录 (由 Java 的 user.home 决定,
+      #      不受 $HOME 环境变量影响)。**账户凭据在这里**:
+      #      private/user-account-private-data.json + config/user-accounts.json,
+      #      另有皮肤缓存 / javaCache.json / user-* 设置。不持久化 = 重装后要重新登录。
+      #   3. ~/.minecraft —— 游戏本体默认目录 (同为相对路径, 由那句 cd $HOME 决定):
+      #      世界 saves/、模组 mods/、光影 shaderpacks/、游戏配置 config/、
+      #      versions/ 与 assets/ 全在这一个目录树下 (开了版本隔离也只是挪到
+      #      versions/<版本>/ 内), 重下代价高 (与 Steam/lutris 同理)。
+      # 若在 HMCL 内把游戏目录改到别处, 那条路径需另行声明。
+      ".hmcl"
+      ".local/share/hmcl"
+      ".minecraft"
     ];
   };
 }
