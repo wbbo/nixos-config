@@ -47,15 +47,53 @@
     stateVersion = "26.05";
   };
 
-  # 用户会话语言统一由 modules/nixos/greetd.nix 的 greetd 单元 Environment
-  # 注入 (经 niri-session 的 `systemctl --user import-environment` 进入
-  # systemd user manager = D-Bus 激活程序的继承源)。
+  # ── 用户会话语言 (D-Bus 激活路径) ──────────────────────────────────
+  # 必须**在 import-environment 之后**再设一次, 否则会被它覆盖。
   #
-  # 此处**不要**再写 `systemd.user.sessionVariables.LANG`: 它生成的
-  # ~/.config/environment.d/10-home-manager.conf 至多只在 user manager
-  # 启动那一刻生效, 而登录时 niri-session 那句 import-environment 会用
-  # 会话的值 (en_US, 来自 PID1/locale.conf) 整体覆盖它 —— 2026-09-12 曾以
-  # 此为修复, 09-16 实测证伪 (Nautilus 经 D-Bus 激活仍是英文), 已移除。
+  # 完整链路 (2026-09-16 逐段实测, 含读 /proc/<pid>/environ 取证):
+  #   D-Bus 激活的 GUI 程序继承 systemd --user 的环境 —— 实测从 Obsidian 唤起
+  #   Nautilus 时, 其 /proc/<pid>/cgroup 落在
+  #   app-dbus-:1.2-org.gnome.Nautilus.slice, 父进程 = systemd --user,
+  #   environ 里 LANG=en_US.UTF-8 → 界面英文。与 Obsidian/Flatpak 均无关。
+  #
+  #   user manager 的 LANG 来源: niri-session 的 `systemctl --user
+  #   import-environment`(无参数 = 导入整个登录会话环境)。会话环境由 PAM 构造,
+  #   /etc/pam/environment 里是 `LANG DEFAULT="en_US.UTF-8"` (源自
+  #   i18n.defaultLocale), 于是 user manager 被覆盖成 en_US。
+  #
+  # 两条看似可行、实测无效的路径 (勿重蹈):
+  #   - `systemd.user.sessionVariables.LANG` → environment.d: 只在 user manager
+  #     **启动时**生效, 随后被上面那句 import-environment 覆盖, 等于没设。
+  #     (另注: Linger=yes, user manager 开机即起, 更早于此。)
+  #   - greetd 单元的 `Environment=LANG` (modules/nixos/greetd.nix): 只作用于
+  #     greetd 自身进程, 经 PAM 建会话时被 pam_env 的 DEFAULT= 重新设上, 传不
+  #     进会话 —— 回滚并重启后实测 user manager 仍是 en_US。
+  #
+  # 可行解: oneshot 用户服务挂在 graphical-session.target 之后 —— 此时
+  # niri.service 已由 niri-session 启动, import-environment 早已跑完, 再
+  # set-environment 就不会被覆盖。实测手工执行同一条命令后, 从 Obsidian 唤起的
+  # Nautilus 立即变为中文。
+  #
+  # 已知局限: 只对**此后**新激活的程序生效; graphical-session.target 到达之前
+  # 启动的 D-Bus 服务仍是 en_US。日常使用(登录后开应用)无影响 —— niri 自己
+  # spawn 的子进程另有 niri config.kdl 的 environment{} 块兜底。
+  systemd.user.services.session-lang = {
+    Unit = {
+      Description = "将会话 LANG 固定为中文 (niri-session 的 import-environment 会覆盖 environment.d)";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.systemd}/bin/systemctl --user set-environment LANG=zh_CN.UTF-8";
+      # 刻意**不加** RemainAfterExit: 加上后服务首次成功即长期处于 active(exited),
+      # systemd 对已 active 的 oneshot 执行 `start` 是**静默空操作**, 不会重跑
+      # ExecStart —— 跨会话(登出再登录)时就会失效。去掉后每次拉起都会真正执行。
+      # 排查提示: 验证该服务必须用 `systemctl --user restart`, 用 `start` 会因
+      # 上述原因看似"服务成功但没生效", 极易误判为逻辑错误 (本轮已踩)。
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
 
   # XDG 用户目录: 统一声明为英文路径 (HM 默认值即 $HOME/Downloads 等英文名)。
   # 此前系统完全没有 ~/.config/user-dirs.dirs —— HM 的 xdg.userDirs 默认

@@ -32,25 +32,20 @@
   users.groups.greeter = {};
 
   # ── 图形会话语言 ──────────────────────────────────────────────────
-  # 会话环境链的源头。niri-session 启动时会跑 `systemctl --user
-  # import-environment`(无参数 = 把**整个登录会话**的环境导入 systemd user
-  # manager),而 D-Bus 激活的 GUI 程序继承的正是 user manager 的环境,不是
-  # 调用方(如 Firefox)的 —— 例: 从 Firefox 点"打开所在文件夹"唤起 Nautilus
-  # (走 org.gnome.Nautilus.service,2026-09-16 实测其父进程 = systemd --user,
-  # cgroup user@1000.service)。故: 会话环境是中文,则 D-Bus 激活路径也是中文。
+  # ⚠ 2026-09-16 实测: 下面这条 `Environment=LANG` **对 D-Bus 激活路径无效**。
+  # 保留仅为 greetd 自身进程环境的一致性, 不要再把它当作会话语言的开关。
   #
-  # 为什么注入点在 greetd 单元而非别处:
-  #   - 单元级 Environment= 优先级**高于** PID1 继承来的 /etc/locale.conf 值;
-  #   - /etc/pam/environment 的条目全是 pam_env 的 DEFAULT=(仅未设置时生效),
-  #     一旦此处先设了, pam_env 不会再顶掉。
-  # 两条失败路径(均已实测, 勿回退):
-  #   - HM `systemd.user.sessionVariables` → ~/.config/environment.d/
-  #     10-home-manager.conf: 被上面那句 import-environment 用登录会话的值
-  #     整体覆盖, 等于没设(2026-09-12 曾以此为修复, 09-16 证伪并移除)。
-  #   - 改 `i18n.defaultLocale` 为 zh_CN: 连带 locale.conf → PID1 → 系统服务
-  #     与 TTY 一起变中文, 与"系统英文 + 桌面中文"的取舍不符(见 locale.nix)。
+  # 为什么无效: 它只设置 greetd 自身进程的环境; greetd 经 PAM 建立用户会话时,
+  # /etc/pam/environment 里的 `LANG DEFAULT="en_US.UTF-8"` 会重新设上 (DEFAULT=
+  # 只在"未设置"时跳过, 而 PAM 会话的环境并非从 greetd 进程继承)。
+  # 回滚本条并重启后实测: systemd --user 仍是 LANG=en_US.UTF-8。
+  #
+  # 真正的注入点在 modules/home/default.nix 的 `systemd.user.services.session-lang`
+  # —— 必须在 niri-session 的 `import-environment` **之后**设才不被覆盖。
+  # 完整的实测链路与两条失败路径见该处注释。
+  #
   # 与 niri config.kdl 的 environment{} 块同值 —— 那边只覆盖 niri 自己 spawn
-  # 的子进程, 是另一条路径上的双保险。
+  # 的子进程, 是另一条路径上的双保险 (这条是有效的)。
   systemd.services.greetd.environment.LANG = "zh_CN.UTF-8";
 
   # 防 greetd 快速重启触发 systemd rate-limit 导致隔次黑屏。
