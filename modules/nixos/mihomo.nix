@@ -178,21 +178,21 @@ ${prefillCmds}
       ''
     );
 
-    # 本机 fake-ip 闭环 (dns.listen ":53" 在模板, 兼路由器/旁路由): dns-hijack
-    # any:53 把 TUN 内所有 53 查询截回 mihomo, 本机 resolv.conf 写什么公网上游
-    # 都等价 —— NM dns=none 拦掉 DHCP 下发的网关 DNS (route-exclude 段绕过劫持,
-    # 拿到的是污染应答且 mihomo 无域名元数据救不回, 绝不可用)。mihomo 挂则
-    # 解析挂, 明确取舍。
+    # 本机 fake-ip 闭环: dns-hijack any:53 把 TUN 内所有 53 查询截回 mihomo,
+    # 本机 resolv.conf 写什么公网上游都等价 —— NM dns=none 拦掉 DHCP 下发的
+    # 网关 DNS (route-exclude 段绕过劫持, 拿到的是污染应答且 mihomo 无域名
+    # 元数据救不回, 绝不可用)。mihomo 挂则解析挂, 明确取舍。
+    # 注意: 这条链路走 TUN 内部劫持, **不经过 dns.listen** —— 2026-09-16 已删除
+    # 模板里的 listen ":53" 与其配套的防火墙 53 放行 (本机解析不受影响, 全机
+    # 无任何组件把 DNS 指向 127.0.0.1)。要做"LAN 设备把本机当 DNS"的旁路由时
+    # 再加回, 且建议用 networking.firewall.interfaces.<内网网卡>.allowed{UDP,TCP}
+    # Ports 按接口放行 —— 全局 allowedUDPPorts/TCPPorts 等于在任何接入的网络上
+    # 开放解析器 (allow-lan 放开的 7890 代理端口同理, 自行取舍)。
     # resolv.conf 静态化: 三条公网 DNS (MAXNS=3 恰满, 全被劫持回 mihomo, 写谁
     # 只是语义摆设), 真正作用是把网关/内网 DNS 挡在列外。关 resolvconf 防
     # openresolv -u 把静态文件覆盖成 NM dns=none 下的空文件 (其 wrapper 变为
     # 显式报错, dispatcher 不再装)。
     networking.networkmanager.dns = "none";
-
-    # 路由器/旁路由场景: LAN 设备把 DNS 指向本机 :53 的查询入口 (INPUT 链;
-    # 设备流量本身走转发/FORWARD 链, 由 TUN 的 nft 规则接管, 不经此清单)
-    networking.firewall.allowedUDPPorts = [ 53 ];
-    networking.firewall.allowedTCPPorts = [ 53 ];
 
     # 允许 DynamicUser=mihomo 绑定 53 端口 (DNS) + 操作 TUN 设备
     # + 尝试识别发起进程 (CAP_SYS_PTRACE): PROCESS-NAME 规则要靠枚举
