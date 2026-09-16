@@ -32,6 +32,7 @@
     ./programs/scratchpad.nix
     ./programs/pigma.nix
     ./programs/lutris.nix
+    ./programs/hmcl.nix
     ./programs/nautilus.nix
     ./programs/wework-fix.nix
     ./fonts.nix
