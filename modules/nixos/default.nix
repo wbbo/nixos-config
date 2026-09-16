@@ -26,6 +26,7 @@
     ./flatpak.nix
     ./steam.nix
     ./udisks.nix
+    ./printing.nix
     ./home-manager.nix
   ];
 }
