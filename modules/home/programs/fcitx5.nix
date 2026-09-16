@@ -106,7 +106,13 @@ in
     rime_dir="$HOME/.local/share/fcitx5/rime"
     stamp="$HOME/.local/state/fcitx5-rime-deployed"
     # 注意: 激活脚本是平铺的 set -eu, 这里绝不能 exit —— 会中断后续钩子
-    # (installNvm 等), 新装机无 rime 目录时整个激活都会静默截断
+    # (installNvm 等), 任何一路失败都可能静默截断整个激活。
+    # 关于下面的 [ -d ] 守卫 (2026-09-16 订正): 原注释写"新装机无 rime 目录",
+    # 该前提**已不成立** —— .local/share/fcitx5/rime 自 2026-09-05 起是持久化
+    # 清单中的**目录级 bind** (modules/home/persist.nix), findmnt 实测为
+    # /dev/sda2[/@persist/home/<user>/.local/share/fcitx5/rime], 故不论是否装过
+    # fcitx5 该目录都恒存在, 守卫实际恒为真。留它无害 (新机器上内层 fp 必为空,
+    # 已由 [ -n "$fp" ] 兜住), 但别据此以为"没有 rime 目录"是可达状态。
     if [ -d "$rime_dir" ]; then
       fp="$(readlink "$rime_dir/default.custom.yaml" 2>/dev/null)$(readlink "$rime_dir/rime_ice.custom.yaml" 2>/dev/null)"
       if [ -n "$fp" ] && [ "$(cat "$stamp" 2>/dev/null)" != "$fp" ]; then
