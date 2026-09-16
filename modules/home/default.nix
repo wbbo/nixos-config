@@ -34,6 +34,8 @@
     ./programs/lutris.nix
     ./programs/hmcl.nix
     ./programs/nautilus.nix
+    # Typora 是 Flatpak 装的 (不在 Nix 里), 本模块只做它那份进阶配置的声明化
+    ./programs/typora.nix
     ./programs/wework-fix.nix
     ./fonts.nix
     ./persist.nix
