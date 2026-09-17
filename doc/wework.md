@@ -17,9 +17,10 @@
 最终可用配置 = **caffe-10.0 runner + 禁 XWeb 硬件加速的策略注册表 + 字体替换 (界面字体
 → Maple Mono NF CN) + wework-fix 守护服务 (清理故障 ARGB 子窗) + fcitx5 XIM 输入法**。
 
-已知残余限制: 应用每创建一个窗口/弹框, 那个透明 ARGB 外框窗就会黑一次。
-2026-09-17 已把守护从 1 秒轮询改为 **X 事件驱动 (实测延迟 ~1ms)**, 黑块按帧计
-不可见; 此前轮询版最坏会停留 1 秒 = 可见闪烁。根因见 §八。
+**2026-09-18 根治**: 真因已定位为 **niri 在 dmabuf 路径上丢失 ARGB buffer 的
+alpha** (不是 satellite, 也不是应用), 通过给 Xwayland 加 `-shm` 绕过 —— 见 §8.9。
+此后透明外框窗能正确透出下层, **黑窗与闪烁同时消失**, `wework-fix` 守护的 ARGB
+部分已无必要 (托盘部分保留)。
 
 ---
 
@@ -141,7 +142,8 @@ wine explorer.exe 的托盘窗 (159x19) 浮在桌面。**不可杀 explorer.exe 
 | 方向 | 结果 |
 |------|------|
 | `WINEDLLOVERRIDES=dwmapi=d` (禁 DWM) | ARGB 窗依旧创建 (非 DWM API 路径) |
-| satellite `-glamor gl` / `es` / `none` | 三种后端全部测试: gl/es 与默认同为黑; none (-shm) 大窗完全不转发 + GL 错误 |
+| satellite `-glamor gl` / `es` | 与默认同为黑 (都走 dmabuf, 同样丢 alpha) |
+| ~~satellite `-glamor none` (-shm)~~ | ~~大窗完全不转发 + GL 错误~~ → **2026-09-18 更正: 这条记录是误判, `-glamor none` 正是最终方案 (§8.9)**。当时那条 `GL_INVALID_VALUE` 其实来自 **niri 的渲染器**, 与 shm 能否转发窗口无关; 本次实测 `-glamor none` 下 1897x2130 的大窗转发/显示都正常。教训: 别把 A 层的错误日志当成 B 层不可用的证据 |
 | satellite master 版 | 未修复 (0.8.2 同) |
 | Wine 虚拟桌面 (注册表 `HKCU\Software\Wine\Explorer\Desktop`) | 生效但 satellite 完全无法转发虚拟桌面窗口, 比黑窗更糟; Bottles 自身 virtual_desktop 参数不生效 (Bottles bug) |
 | 应用侧 `--disable-gpu*` 启动参数 | 主进程不转发给 CEF 子进程, 无效 |
@@ -326,12 +328,41 @@ grep 中文搜不到 —— 改名 = 停会话 + `mv` 目录 + 按转义模式 `
 | **niri 窗口规则 `match title="^$"` → `opacity 0.0`** | ❌ **试过且有害**: 主窗**打开那一刻标题还是空的**, 也被 `^$` 匹配 → 整个企业微信变透明; 而 niri **不会**在标题后来补上时重新求值。niri 侧看不到 X 窗口的深度, 也没有别的属性能区分外框窗与主窗 → **此路不通** (已回滚)。教训: 想在合成器侧拦截, 必须用"窗口打开瞬间就确定"的属性 |
 | **早期用"Depth-32 当子窗"做的合成复现** | ⚠ **拓扑搞错了** —— 那是**子窗**(无自己的 surface), 行为是"父窗绘制被封死", 与本故障完全不同。记录在此避免重蹈: **判断拓扑必须先看 `xwininfo -id <win>` 的 Parent, 不能只看 `-root -tree` 的缩进** |
 
-### 8.3 尚未定位的一层
+### 8.3 alpha 丢失层: 已定位到 niri 的 dmabuf 路径 (2026-09-18)
 
-**alpha 在哪一层被丢, 未定论。** 已排除 Xwayland 的格式选择与 satellite 的转发;
-剩余嫌疑: **niri 对该 surface 的合成** 或 **NVIDIA dmabuf 路径**。
-定位手段需 `WAYLAND_DEBUG=1` 重启 satellite —— 会杀掉当前 X 会话 (wine 会 CriticalSection
-死锁), 故本次未做。这是留给下次的明确接口。
+**结论: niri(smithay)在合成 linux-dmabuf 送来的 ARGB buffer 时会丢掉 alpha;
+同样的 buffer 走 wl_shm 则完全正常。**
+
+取证 (未动主会话: 另起 `xwayland-satellite :1` 做实验):
+
+1. **协议追踪** (`WAYLAND_DEBUG=1` 挂在 satellite 上) —— 两个方向都是同一个格式:
+
+   ```
+   # Xwayland -> satellite
+   create_immed(new id wl_buffer#25, 1897, 2130, 875713089, 0)
+   # satellite -> niri
+   -> zwp_linux_buffer_params_v1@41.create_immed(wl_buffer@42, 1897, 2130, 875713089, 0)
+   ```
+   `875713089` = `0x34325241` = `AR24` = `DRM_FORMAT_ARGB8888`。且该 surface
+   **没有任何 `set_opaque_region`** (追踪里 0 次, satellite 源码里也没有)。
+   → Xwayland 与 satellite 都是清白的, alpha 一路都在。
+
+2. **A/B 对照** —— 测试窗内容 = 全透明 + 一块不透明标记; 两次都是同一几何
+   (1265x1420 逻辑)、都聚焦, 只换 Xwayland 的渲染路径:
+
+   | 渲染路径 | buffer | 屏幕"新增黑" |
+   |---|---|---|
+   | glamor (默认) → **dmabuf** | `AR24` | **46.0%** (≈ 整窗面积 48.7%) |
+   | `-glamor none` → **wl_shm** | `AR24` | **9.9%** (那部分是 niri 给聚焦窗画的阴影) |
+
+   → **只换传输路径, 结果就正常了** ⇒ 责任在 niri 的 dmabuf 导入/合成。
+
+**为什么只在 NVIDIA 出现**: dmabuf 导入是驱动相关路径 (NVIDIA 的 modifier/EGL
+纹理导入与 Mesa 不同)。
+
+**旁证**: niri 日志里 `smithay::backend::renderer::gles: [GL] GL_INVALID_VALUE
+error generated. Size and/or offset out of range.` —— 报错的是 **niri 自己的渲染器**
+(你最初 issue 里把这条记成了 Xwayland 的错误)。
 
 ### 8.4 解决方法
 
@@ -432,3 +463,44 @@ wl_surface 并把 buffer 提交给 niri 的(Xwayland 就是 X server 本身), �
 所以旧的轮询版天然没这个坑。**移植到 Xlib 时要把"空串 == 无名"显式写出来。**
 回归用例: `WM_NAME=''` 应被摘 (实测 0.1ms), `WM_NAME='OpenapiWebviewWarningTips'`
 应保留 (实测不摘) —— 两个方向都验过。
+
+### 8.9 最终方案: Xwayland 走 shm (绕过 niri 的 dmabuf alpha 丢失)
+
+`modules/home/niri/default.nix` 里声明了一个 wrapper:
+
+```nix
+xwayland-satellite-shm = pkgs.writeShellScript "xwayland-satellite" ''
+  exec ${pkgs.xwayland-satellite}/bin/xwayland-satellite "$@" -glamor none
+'';
+home.file.".local/bin/xwayland-satellite".source = xwayland-satellite-shm;
+```
+
+原理: niri 没有给 xwayland-satellite 传参的配置项, 而 niri 是按 PATH 找可执行文件的
+—— `~/.local/bin` 在 niri 的 PATH 里排第一, 所以 niri spawn "xwayland-satellite"
+时命中这个 wrapper, 它再 exec 真身并追加 `-glamor none` (satellite 把该值翻译成
+Xwayland 的 `-shm`)。
+
+**实测生效** (`ps` 可见 Xwayland 带 `-shm`), 且:
+
+- 那个 1932x2166 的 Depth-32 外框窗现在 `IsViewable` 而**背后的企业微信窗口内容完全
+  正常** —— 修复前它一 IsViewable 整个应用就变黑;
+- 右键菜单圆角干净, 不再有黑框/闪烁。
+
+**代价**: X11 窗口全部走 CPU 拷贝 (而非 GPU dmabuf)。办公类应用无感; 游戏/视频类
+X11 应用会有性能损失。**niri 修好 dmabuf alpha 后本 wrapper 应退役。**
+
+**守护怎么办**: `wework-fix` 的 ARGB 部分已无必要 —— alpha 正常后那些窗本来就该
+显示 (它们是窗口外框/阴影, 正常渲染是**设计意图**), 继续 unmap 只是白白和
+应用拉锯 (实测 2 分钟 39 次 unmap)。托盘窗 (explorer.exe) 那条与本案无关, 可保留。
+留给下次决定: 把 ARGB 判据摘掉, 只留托盘。
+
+**上游**: 已写好 niri issue 稿 (英文, 含协议追踪 + A/B 数据 + 复现步骤), 存在
+`~/.local/share/argb-repro/niri-issue.md` —— 待发 (本机 token 无 GitHub 写权限)。
+标题: *NVIDIA: alpha is lost when compositing client buffers delivered via
+linux-dmabuf — transparent windows render as opaque black*。同时
+xwayland-satellite#502 需要更正责任归属 (指向 niri, 而非 satellite 的"捕获路径")。
+
+**教训**: 我曾把"Xwayland 用 `-glamor none` 时大窗不转发 + GL 错误"记进「已排除的
+路线」, 据此认为 shm 路径不可用。实际上那条 GL 错误来自 **niri 的渲染器**, 与
+shm 路径能不能转发窗口无关; 本次实测 `-glamor none` 下 1897x2130 的大窗转发与
+显示都正常。**别把 A 层的错误日志当成 B 层不可用的证据。**
