@@ -160,6 +160,17 @@ wine explorer.exe 的托盘窗 (159x19) 浮在桌面。**不可杀 explorer.exe 
 - nix wrapper 进程的 **comm 带点前缀** (`.fcitx5-wrapped` / `.xwayland-satel`) →
   `pgrep -x fcitx5` 永不匹配; 判活用 `systemctl --user is-active`。
 - 企业微信**单实例**: 旧实例在跑时新实例静默退出 (表现为「启动失败」)。
+- **`bottles-cli stop -b <瓶>` 不保证杀掉实例** (只杀 bottle 自己追踪的进程)。09-18 实测
+  连踩两次: 明明报 "Stopped all processes", 旧实例整棵树却还活着, 其陈旧的窗口盖在新实例
+  之上 → **鼠标点击全被那个已经没响应的窗口吃掉**。排查方向因此被带偏一大圈 (一度误判为
+  shm 的问题, 又误判为 unmap 的问题)。
+  **重启企业微信前先验证真的清空**: `ps -eo comm | grep WXWork` (应为空) +
+  `DISPLAY=:0 xwininfo -root -tree | grep -ci wxwork` (应为 0); 不为空就按 PID 逐个 TERM。
+- **重启 X 会话会带走"看起来是 Wayland 客户端"的程序**。09-18 实测: kill 掉
+  xwayland-satellite 后 **VS Code 一并退出** —— 它是 Wayland 客户端(持 wayland-cursor
+  memfd), 但启动参数是 `--ozone-platform-hint=auto` 且 `DISPLAY` 设着, 大概率握有一条
+  探测用 X 连接, X 一死就被 Chromium/Electron 的 XIOError 致命化处理带走。
+  连带后果: **Claude Code 就跑在它终端里, 会话也一起断**。动 X 之前先把这类程序关掉。
 
 **nix / systemd**
 
