@@ -74,6 +74,14 @@
   # set-environment 就不会被覆盖。实测手工执行同一条命令后, 从 Obsidian 唤起的
   # Nautilus 立即变为中文。
   #
+  # 端到端实测 (2026-09-17 journal 取证, 非推断):
+  #   9-16 19:24:43  user manager 启动 (开机)
+  #   9-16 19:25:00  session-lang **自动运行** ← 会话启动后 17 秒
+  #                  → 证明 WantedBy=graphical-session.target 的自动触发成立
+  #   验证: systemctl --user show-environment | grep LANG → zh_CN.UTF-8 ✓
+  # 注意运行后服务处于 inactive(dead) 是**预期**状态, 不是故障 —— 见下方
+  # 不加 RemainAfterExit 的理由 (正因如此, 每次会话启动都能重跑)。
+  #
   # 已知局限: 只对**此后**新激活的程序生效; graphical-session.target 到达之前
   # 启动的 D-Bus 服务仍是 en_US。日常使用(登录后开应用)无影响 —— niri 自己
   # spawn 的子进程另有 niri config.kdl 的 environment{} 块兜底。
