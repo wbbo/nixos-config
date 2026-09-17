@@ -190,7 +190,16 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
 ```
 
 **轮换步骤**:
-1. GitHub 生成新 PAT: classic 勾选 `public_repo` + `read:org` + `gist` —— 除 nix 拉取外 gh CLI 也吃同一凭据 (只勾 `public_repo` 时 gh 表现是 status 显示已登录但私有库 404 / org 403); fine-grained 需在 token 设置里显式勾 Repository access。
+1. GitHub 生成新 PAT: **必须是 classic** (页面 https://github.com/settings/tokens 上选
+   "Generate new token (classic)", 不是默认那个 fine-grained 入口), 勾选
+   `public_repo` + `read:org` + `gist` —— 除 nix 拉取外 gh CLI 也吃同一凭据
+   (只勾 `public_repo` 时 gh 表现是 status 显示已登录但私有库 404 / org 403)。
+   **为什么不能用 fine-grained**: 细粒度 token 对"你不拥有的公开仓库"最多只能给到只读
+   (Repository access 里那个 `Public repositories (read-only)` 档, 且别人的仓库根本
+   勾不进 `Only select repositories`) —— 读 issue 没问题, **给别人的仓库提 issue/PR
+   会 403 `Resource not accessible by personal access token`**。2026-09-18 实测:
+   两次轮换都建成细粒度 (GitHub 页面现在默认就是细粒度入口), 直到换成 classic 才发得出去。
+   验证: 前缀 **`ghp_`** = classic ✓; **`github_pat_`** = 细粒度 ✗。
 2. 更新 `secrets/secrets.yaml` —— `sops set` 需 host key 派生密钥 (`SOPS_AGE_KEY_FILE`), value 必须是 **JSON 字符串** (外层带引号):
    ```bash
    cd ~/code/nixos-config
