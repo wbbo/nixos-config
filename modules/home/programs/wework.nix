@@ -161,25 +161,41 @@ let
               x.XFree(hint.res_class)
       low = cls.lower()
 
+      # ── 为什么必须摘 ARGB 外框窗 (2026-09-18 复盘) ───────────────────────
+      # 这些窗的内容是"全透明 + 一圈白色圆角边框", 设计上围着应用窗画边框,
+      # 但 **niri 把它当独立窗口摆放** —— 边框围不住应用窗, 结果:
+      #   · alpha 正常时 (shm) → 应用窗边缘多一条游离的白色竖条
+      #     (实测宽 8px, rgb(216,230,244); unmap 掉立即消失)
+      #   · alpha 被丢时 (dmabuf) → 整块黑盖住应用
+      # 两种表现都说明"该窗不该显示"; niri 自己会画窗口阴影, 应用这圈多余且错位。
+      # 曾一度以为 alpha 修好后它"本来就该显示"而摘掉判据 —— 那是错的, 已回滚。
+      # 另: unmap 它**不影响输入**。当年"点击失效"的真凶是同时跑了两个企业微信
+      # 实例 (陈旧窗口盖在上面), 与 §2.4 的 Default IME 是两回事。
+      # 代价: 与应用拉锯 (应用会重映射, 实测 2 分钟 39 次 unmap) —— 可接受。
+      if "wxwork" in low:
+          # 判据: 无名 + 可见 + Depth 32 + >10x10。
+          # "无名"保证正常 UI 窗 (企业微信/menu/群公告 等有标题的) 不受影响。
+          if attrs.depth != 32:
+              return None
+          # "无名" 必须把**空字符串**也算进来: 实测这些窗的 WM_NAME 存在但为空
+          # (XFetchName 返回 1, 指针非 NULL, 内容 "")。早期版本只看指针非 NULL
+          # 就判为"有名" → 那个 1897x2130 的大黑框从来没被摘过。
+          # (xwininfo 的 "(has no name)" 对空串和缺属性都这么打印, 所以轮询版
+          #  没踩到这个坑 —— 移植到 Xlib 时丢了这层语义。)
+          name = ctypes.c_void_p()
+          if x.XFetchName(dpy, wid, ctypes.byref(name)) and name.value:
+              empty = not ctypes.string_at(name.value).strip()
+              x.XFree(name)
+              if not empty:
+                  return None
+          if attrs.width > 10 and attrs.height > 10:
+              return "ARGB"
+          return None
+
       if "explorer" in low:
           # wine 托盘窗 (explorer.exe 的白色图标横条): >4x4 才动 (保护 1x1 消息窗)
           if attrs.width > 4 and attrs.height > 4:
               return "tray"
-
-      # ── 已退役: wxwork 的 "ARGB 外框窗" unmap (2026-09-18) ──────────────
-      # 原本这里会把「无名 + Depth 32 + >10x10」的 wxwork 窗 unmap 掉, 因为
-      # 那些透明外框窗会被渲染成不透明黑、盖住应用。
-      #
-      # 真因已定位并绕过: 是 **niri 在 dmabuf 路径上丢 alpha** (见 doc/wework.md
-      # §8.3), 由 niri 模块的 `-glamor none` wrapper 解决 (§8.9)。alpha 正常后
-      # 这些窗**本来就该显示** (它们是窗口外框/阴影, 正常渲染才是设计意图), 继续
-      # unmap 反而有害:
-      #   1. 实测和应用拉锯 —— 应用反复重映射, 守护 2 分钟 unmap 39 次;
-      #   2. **会打断应用的输入** (unmap 掉应用命中测试依赖的窗口 → 鼠标点击无反应,
-      #      与 §2.4 "unmap Default IME 导致点击失效" 同源)。
-      # 若哪天 wrapper 丢失、黑窗复现, 把下面这段恢复即可 (判据: 空串标题也算无名 ——
-      # XFetchName 返回 1 但内容为 "" 的窗必须当作无名, 早期只看指针非 NULL 会漏掉)。
-      return None
 
 
   def fix(dpy, wid, tag):
@@ -344,18 +360,18 @@ in
     Install.WantedBy = [ "timers.target" ];
   };
 
-  # ── 托盘窗清理守护 (原 "ARGB 黑窗守护", 2026-09-18 已瘦身) ───────────────
+  # ── ARGB 外框窗 + 托盘窗清理守护 ────────────────────────────────────────
   #
-  # 历史: 本守护原本的核心职责是 unmap 企业微信创建的**透明 Depth-32 外框窗**
-  # (它们被渲染成不透明黑盖住应用)。真因已于 2026-09-18 定位:
-  # **niri 在 dmabuf 路径上丢 ARGB buffer 的 alpha** (doc/wework.md §8.3), 由
-  # niri 模块的 `-glamor none` wrapper 绕过 (§8.9)。alpha 正常后那些外框窗
-  # 本来就是应用的正常 UI, 不需要 (也不应该) 摘掉 —— 摘了会和应用拉锯,
-  # 更要命的是**会打断应用的输入** (鼠标点击无反应; 与 §2.4 unmap Default IME
-  # 导致点击失效同源)。故 ARGB 判据已退役, 判据函数里留有恢复用的注释。
-  #
-  # 现仅保留: explorer.exe 的 wine 托盘横条 unmap (独立问题)。
-  #
+  # 两个职责:
+  #   1. unmap 企业微信的**透明 Depth-32 外框/阴影窗**。它们的内容是"全透明 +
+  #      一圈白色圆角边框", 设计上围着应用窗画边框; 但 niri 把它当**独立窗口**
+  #      摆放, 边框围不住应用窗 → 应用窗边缘出现一条游离的白色竖条 (实测 8px,
+  #      rgb(216,230,244))。alpha 修好 (niri 模块的 `-glamor none` wrapper,
+  #      doc §8.9) 之前它表现为**整块黑盖住应用**。
+  #      → 两种表现都是"该窗不该显示", 故始终需要 unmap。
+  #      注: unmap 它不影响输入; 当年的"点击失效"真凶是同时跑了两个企业微信
+  #      实例 (陈旧窗口盖在上面)。
+  #   2. unmap explorer.exe 的 wine 托盘横条 (与上无关的独立问题)。
   # 工作方式: **事件驱动** —— 在 root 上选 SubstructureNotify, 收到 MapNotify
   # 即判窗并 unmap, 实测延迟 ~1ms; 另有每 SWEEP_INTERVAL 的全量清扫兜底
   # (兼作重启后的首轮清理)。全量清扫只扫 root 子窗 —— 非 root 子窗不可能有
