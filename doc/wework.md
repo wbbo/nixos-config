@@ -17,8 +17,9 @@
 最终可用配置 = **caffe-10.0 runner + 禁 XWeb 硬件加速的策略注册表 + 字体替换 (界面字体
 → Maple Mono NF CN) + wework-fix 守护服务 (清理故障 ARGB 子窗) + fcitx5 XIM 输入法**。
 
-已知残余限制: 右键菜单/弹框首次打开时会闪 1~2 帧黑 (毫秒级自愈), 属上游
-xwayland-satellite 在 NVIDIA 上的缺陷, 不影响功能。
+已知残余限制: 应用每创建一个窗口/弹框, 那个透明 ARGB 外框窗就会黑一次。
+2026-09-17 已把守护从 1 秒轮询改为 **X 事件驱动 (实测延迟 ~1ms)**, 黑块按帧计
+不可见; 此前轮询版最坏会停留 1 秒 = 可见闪烁。根因见 §八。
 
 ---
 
@@ -94,22 +95,25 @@ Inherited_Environment_Variables 列表含 XMODIFIERS, 自动传入)。fcitx5 侧
 
 **现象**: 窗口黑或极暗, `xwd` (X 服务端) 抓取内容完全正常, `grim` (合成器) 全黑。
 
-**根因链** (三层):
-1. 企业微信的 CEF/XWeb 把 GPU 合成内容画在一个 **32 位 ARGB 子窗口** (Depth 32, 无名,
-   常比父窗大), 在 NVIDIA + xwayland-satellite 下该子窗内容**读不到** (未初始化 GPU
-   buffer), 空壳子窗盖住下层正常 GDI 绘制的 UI;
-2. satellite 对运行中新建的窗口缓存首帧黑帧, 不重抓 → 双击菜单/弹框持续黑;
+**根因链** (2026-09-17 实机取证更正 —— 原文此处描述的是**错的拓扑**, 见 §八):
+1. 企业微信会创建**透明的 Depth-32 (ARGB) 顶层窗**当窗口外框/阴影 (`xwininfo` 实测
+   `Parent window id` 是 **root**, 不是主窗的子窗)。它是 root 直接子窗 → satellite
+   接管 → 在 niri 里成为**独立窗**叠在应用窗上; 其内容为「全透明 + 一圈白色圆角边」,
+   却因 **alpha 未被尊重**而渲染成不透明黑, 整块盖住应用 → 黑窗;
+2. 该窗每次创建都会黑一次, 由 wework-fix 守护即时 unmap (事件驱动, ~1ms);
 3. X server (satellite) 重启后 fcitx5 的 XIM 注册丢失 → 输入法失效。
 
 **解决**:
 - 策略注册表禁 XWeb 硬件加速 (见上) —— 让主窗内容回到 GDI 层;
-- **wework-fix 守护服务** (`modules/home/programs/wework.nix`, 09-17 前为 wework-fix.nix): 1 秒轮询,
-  自动 unmap「Depth 32 + 无名 + IsViewable + >10x10」的故障窗与 explorer 托盘窗,
-  并写日志 (可审计); 实测菜单/弹框毫秒级自愈 (闪 1~2 帧黑);
+- **wework-fix 守护服务** (`modules/home/programs/wework.nix`, 09-17 前为 wework-fix.nix):
+  事件驱动监听 root 的 SubstructureNotify, 收到 MapNotify 即判窗 unmap;
+  判据「无名 + wxwork + Depth 32 + IsViewable + >10x10」, 另有 explorer 托盘窗;
+  全程写日志 (可审计)。实测延迟 ~1ms (见 §8.8);
 - 输入法由 fcitx5 体系负责 (见上)。
 
-**待上游根治**: xwayland-satellite 在 NVIDIA 上无法读取 32 位 ARGB 窗口内容。
-上游修复后 wework-fix 守护可退役。
+**待上游根治**: 黑窗的根因**不在 xwayland-satellite**(它是纯 buffer 转发, 没有
+像素路径), 也不在"应用没画出来" —— 是一个**设计上透明的 32 位 ARGB 顶层窗被当作
+不透明黑渲染**, 完整取证见 **§八 根因定位**。上游修复后 wework-fix 守护可退役。
 
 ### 2.2 崩溃循环 (TxBugReport 弹窗)
 
@@ -248,7 +252,7 @@ journalctl --user -u wework-adapt --no-pager -n 20
 | 组件 | 形式 | 职责 |
 |------|------|------|
 | `wework-adapt` 服务 + 30min 定时器 | oneshot, 幂等自检 | 补齐 runner / 策略注册表 / 字体替换 (§一 的三项, 已就绪即跳过) |
-| `wework-fix` 服务 | 1s 轮询守护 | unmap 故障 ARGB 子窗 + explorer 托盘横条 (§2.1 的桌面侧兜底) |
+| `wework-fix` 服务 | X 事件驱动守护 (~1ms 响应) | unmap 故障 ARGB 外框窗 + explorer 托盘横条 (§2.1 的桌面侧兜底) |
 | `wework-launch` + .desktop | 启动 wrapper | 启动器 (Mod+Space) 可搜可启动 |
 
 配套文件 (同目录 `wework/`):
@@ -278,3 +282,149 @@ grep 中文搜不到 —— 改名 = 停会话 + `mv` 目录 + 按转义模式 `
 
 同样刻意不做的: bottle 内 Windows 版 ToDesk 的安装自动化 (wine 下根本跑不起来,
 见「已排除的路线」)。
+
+---
+
+## 八、黑窗根因定位 (2026-09-17 实机取证)
+
+本节更正 §2.1 的根因表述。方法: 重建 bottle (caffe-10.0 + 企业微信 5.0.11.6018 +
+`wework-adapt`) 后在**企业微信运行中**逐步取证 —— 导出 X 窗口像素为 PNG、抓屏比对、
+`niri msg windows` 查合成器侧、Xwayland 24.1.13 / satellite master 源码核对。
+
+### 8.1 结论: 一个"设计上透明"的 ARGB 顶层窗被当作不透明黑渲染
+
+因果链 (逐步实测):
+
+1. **CEF 硬件加速开启时**, 企业微信除主窗 (300x420, Depth 24) 外另建一个 X 窗:
+   **372x492, Depth 32, 无名, IsViewable** —— 比主窗大。
+2. 它的 `Parent window id` 是 **root**(`xwininfo -id <win>` 实测) —— **不是主窗的子窗**。
+3. 因为是 root 直接子窗, satellite **会接管它** (`src/xstate/mod.rs:362` 的判据正是
+   `parent == root`) → 它有**自己的 Wayland surface** → niri 里是一个**独立浮动窗**。
+   实测 `niri msg windows`: 主窗 id 44 (`企业微信`, 200x280 逻辑), 该窗 id 45 (标题空,
+   248x328 逻辑), 浮在主窗之上且更大。
+4. 导出该窗内容为 PNG: **整窗透明 (alpha=0), 只有一圈白色圆角边框** —— 它是个"窗口
+   外框/阴影"窗, 设计上就该透出下面的主窗。
+5. 像素统计: 该窗 X 侧 pixmap 中 **alpha=0 占 76.8%**, 不透明像素约 6%; 而屏幕同一
+   区域的实测是 **76.6% 黑 / 5.7% 白** —— 比例几乎完全吻合。
+   → **透明区域 (rgba 0,0,0,0) 被当作不透明黑显示, 整块盖住主窗。**
+
+主窗本身内容**完全正常** (导出 PNG 是登录二维码界面, 98.7% 纯白)。所以故障不是
+"应用没画出来", 而是**一个本该透明的覆盖窗被渲染成了黑**。
+
+### 8.2 已排除的假设 (含我自己走过的弯路)
+
+| 假设 | 结论 |
+|------|------|
+| satellite 捕获 32 位窗口失败 | ❌ satellite **无像素路径**(全仓无 `XGetImage`/`CopyArea`/`mmap`/`memfd`/`EGL`), 只转发 buffer; `convert_wenum` 是忠实换类型不改格式 |
+| X 服务端内容是黑的 | ❌ X 侧内容正确(导出 PNG 可见), 黑在下游 |
+| Xwayland 设了 opaque region | ❌ rootless 模式下**不设** —— 唯一调用点在非 rootless 的 `xwl_create_root_surface()` |
+| Xwayland 选错 buffer 格式 | ❌ depth 32 → `ARGB8888`, shm (`shm_format_for_depth`) 与 GBM (`gbm_format_for_depth`) 两条路径都是 |
+| **niri 窗口规则 `match title="^$"` → `opacity 0.0`** | ❌ **试过且有害**: 主窗**打开那一刻标题还是空的**, 也被 `^$` 匹配 → 整个企业微信变透明; 而 niri **不会**在标题后来补上时重新求值。niri 侧看不到 X 窗口的深度, 也没有别的属性能区分外框窗与主窗 → **此路不通** (已回滚)。教训: 想在合成器侧拦截, 必须用"窗口打开瞬间就确定"的属性 |
+| **早期用"Depth-32 当子窗"做的合成复现** | ⚠ **拓扑搞错了** —— 那是**子窗**(无自己的 surface), 行为是"父窗绘制被封死", 与本故障完全不同。记录在此避免重蹈: **判断拓扑必须先看 `xwininfo -id <win>` 的 Parent, 不能只看 `-root -tree` 的缩进** |
+
+### 8.3 尚未定位的一层
+
+**alpha 在哪一层被丢, 未定论。** 已排除 Xwayland 的格式选择与 satellite 的转发;
+剩余嫌疑: **niri 对该 surface 的合成** 或 **NVIDIA dmabuf 路径**。
+定位手段需 `WAYLAND_DEBUG=1` 重启 satellite —— 会杀掉当前 X 会话 (wine 会 CriticalSection
+死锁), 故本次未做。这是留给下次的明确接口。
+
+### 8.4 解决方法
+
+| 层 | 手段 | 有效性 |
+|----|------|--------|
+| **CEF (根治)** | 禁 XWeb 硬件加速 (策略注册表, 已声明式) | **实测有效** —— 不再创建那个 ARGB 外框窗 |
+| **窗口管理 (兜底)** | `wework-fix` unmap 该窗 | **实测有效** —— 机制就是"移走那块黑"; 代价是打断 CEF 合成 → 重建时闪 1~2 帧 |
+| satellite / niri 改动 | 任何改动 | satellite 不在像素路径上; niri 无"强制不透明"规则且不实现 `wp_alpha_modifier_v1` |
+| 上游 | 让合成链路尊重 X11 ARGB 窗的 alpha | 需先在 §8.3 定位到具体层 |
+
+### 8.5 附带发现: `wework-fix` 的进程门禁会被 wrapper 骗到
+
+门禁扫 `/proc/*/cmdline` 找 `WXWork.exe`。实测下列**残留进程**会让它误判"企业微信运行中":
+
+- `timeout 1800 flatpak run ... bottles-cli run -b Work -e 'C:\...\WXWork.exe'` (启动器 wrapper)
+- `bwrap --args 76 -- bottles-cli run ...` (flatpak 沙箱宿主)
+- `crashpad_handler.exe` (路径含 `WXWork`)
+
+后果: **`wework-adapt` 一直跳过**。09-17 实机重建时卡了 6 轮 (22:29~22:37), 直到手工
+按 PID 清掉这些残留才跑通。且这些进程 `bottles-cli stop` 不一定回收。
+**已修 (2026-09-17)**: 判据改为按 **comm** 匹配 (`comm` 以 `WXWork` 开头 ——
+覆盖 `WXWork.exe` / `WXWorkWeb.exe` / `WXWorkUpgrader.exe`)。wrapper 的 comm 是
+`bash`/`timeout`/`bwrap`/`crashpad_handle`, 不会再误判。
+
+### 8.6 复现器 / 取证脚本
+
+`~/.local/share/argb-repro/` (纯 ctypes 调 libX11, 不需要编译器和 X11 头文件):
+
+| 脚本 | 用途 |
+|------|------|
+| `dump2png.py` | **关键**: 把任意 X 窗口内容导出为 PNG 并打印 alpha 分布 —— 本次定位靠它 |
+| `live-probe.py` | 就地统计某窗口的颜色/近黑占比 |
+| `exp2.py` / `exp3.py` | 早期合成复现 (注: 用的是**子窗**拓扑, 结论见 §8.2 末行) |
+| `win-bisect.py` | `XCreateWindow` 组合二分。记一个坑: 深度与父窗不同的窗口若走 `CWBorderPixmap`/`CWBackPixmap` 的 `CopyFromParent`/`ParentRelative` 分支, X server 直接 `BadMatch`, 必须带 `CWBorderPixel` |
+
+### 8.7 重建 bottle 的实操 (本次走通, 补 §七「自动化边界」)
+
+```bash
+# 1. runner 落到 runners/ (bottles-cli 认这个值才肯用; 缺包时静默失败)
+#    URL/md5 见 adapt.sh 头部; 包内顶层目录要 strip 一层
+# 2. 建容器
+flatpak run --command=bottles-cli com.usebottles.bottles new \
+  --bottle-name Work --environment application --arch win64 --runner caffe-10.0
+# 3. 改参数 (Application 环境默认 dxvk=true, 需改回文档配置)
+flatpak run --command=bottles-cli com.usebottles.bottles edit -b Work \
+  --params 'dxvk:false,vkd3d:false,renderer:gdi'
+# 4. 装企业微信 —— NSIS 安装器, /S 静默; 安装包在 ~/Downloads 时需一次性放开沙箱可见
+flatpak run --filesystem=/home/wbb/Downloads:ro --command=bottles-cli \
+  com.usebottles.bottles run -b Work -e /home/wbb/Downloads/WeCom_5.0.11.6018.exe /S
+# 5. 声明式适配 (runner 已是则跳过; 写策略注册表 + 字体替换)
+systemctl --user start wework-adapt
+```
+
+注意: 第 4 步装完 (1.8G) 后安装器的收尾进程可能长时间不退出, 用 `bottles-cli stop -b Work`
+收尾; 若 `stop` 后仍有残留, 按 PID 清理再跑第 5 步 (见 §8.5)。
+
+### 8.8 守护改造: 轮询 → X 事件驱动 (2026-09-17)
+
+**动机**: 1 秒轮询意味着每新建一个窗口/弹框, 那块黑最坏停留 1 秒 = **可见闪烁**
+(即用户反馈的"还是会有闪烁的黑框")。原实现选轮询的两条理由**现在都不成立**:
+
+| 原理由 | 现状 |
+|--------|------|
+| "故障 ARGB 窗是孙窗, root 的 SubstructureNotify 收不到" | ❌ 基于搞错的拓扑。实测故障窗 `Parent window id` = **root**, 是直接子窗, 事件完全收得到 |
+| "Xlib 长连接在 satellite 重启时抛异常杀死进程" | ✅ 仍成立 —— 但现在接得住: X 连接断开时进程干净退出, `Restart=on-failure` + `RestartSec=3` 拉起, 重启后首轮全量清扫兜底 |
+
+**改法** (`fixPy`, 纯 ctypes 直连 libX11, 不再需要 xwininfo/xdotool 子进程):
+
+- root 上 `XSelectInput(SubstructureNotifyMask)`, 循环收 `MapNotify` → 判窗 → `XUnmapWindow`
+- `XGetWindowAttributes` 读 depth/map_state/class, `XGetClassHint` 读类名, `XFetchName` 判断是否无名
+- 兜底: 每 5 秒 `XQueryTree(root)` 全量清扫一次 (**只扫 root 直接子窗** —— 非 root 子窗不可能有自己的 surface, 也就不会显示出来)
+- 进程门禁改按 **comm** (见 §8.5)
+- `RestartSec` 10 → 3
+
+**效果实测** (合成一个「无名 + wxwork 类名 + Depth 32 + 500x400」的 root 子窗, 三次):
+
+```
+建窗 1789658169.280 → unmap 1789658169.281   延迟 0.001 秒
+建窗 1789658172.288 → unmap 1789658172.289   延迟 0.001 秒
+建窗 1789658175.284 → unmap 1789658175.285   延迟 0.001 秒
+```
+
+**~1ms**, 比 1 秒轮询快约 1000 倍。
+（对照组: 把测试窗的 WM_CLASS 去掉后不会被误伤, 判据仍精确。）
+
+**但"0.1ms"只代表守护进程反应有多快, 不代表屏幕上那一帧有多快 —— 实测仍会"闪一下"。**
+原因是个**赢不了的竞态**: 应用 map 窗口时, Xwayland 是在**同一次请求处理里**就创建
+wl_surface 并把 buffer 提交给 niri 的(Xwayland 就是 X server 本身), 而守护作为外部
+客户端只能等 MapNotify 事件 —— 提交早已发生。**事后 unmap 这条路的天花板就是一帧。**
+
+→ 要根治只剩一条路: **让 alpha 被尊重**(见 §8.3)。transparent 真的透明之后,
+这些外框窗根本不可见, 不闪、不黑角、整窗也不会黑, 守护可一并退役。
+
+**踩坑 (移植时丢掉的语义)**: 新守护第一版**漏掉了真实的黑框** —— 实测那些窗的
+`WM_NAME` **存在但为空字符串**(`XFetchName` 返回 1、指针非 NULL、内容 `""`), 而
+判据写成了"指针非 NULL 即有名" → 那个 1897x2130 的大黑框一次都没被摘过, 表现为
+"点击/最大化后仍有黑框"。`xwininfo` 的 `(has no name)` 对**空串和缺属性都这么打印**,
+所以旧的轮询版天然没这个坑。**移植到 Xlib 时要把"空串 == 无名"显式写出来。**
+回归用例: `WM_NAME=''` 应被摘 (实测 0.1ms), `WM_NAME='OpenapiWebviewWarningTips'`
+应保留 (实测不摘) —— 两个方向都验过。
