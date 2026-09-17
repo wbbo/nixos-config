@@ -27,6 +27,7 @@
     ./steam.nix
     ./udisks.nix
     ./printing.nix
+    ./rustdesk.nix
     ./home-manager.nix
   ];
 }

@@ -11,11 +11,19 @@
   ### 不启用 X11(纯 Wayland)
   services.xserver.enable = false;
 
-  ### xdg desktop portal (Wayland 合成器需要 wlr + gtk 双 portal)
+  ### xdg desktop portal (gnome + gtk)
+  # gnome portal 供 ScreenCast —— niri 实现 Mutter ScreenCast 的 D-Bus 接口喂它
+  # (niri 的 nixpkgs 模块已自动把 xdg-desktop-portal-gnome 加进 extraPortals,
+  # 上游注明 "required for screencast support"; 这里显式重复列出仅为可读性,
+  # list 选项合并后 symlink join 去重, 无副作用)。
+  # 所有 portal 屏幕共享走它: RustDesk 被控 / Flatpak OBS 屏幕捕获 / 浏览器共屏。
+  # 原先列的 xdg-desktop-portal-wlr 已移除 —— niri 自带的 niri-portals.conf 是
+  # default=gnome;gtk, wlr 不会被选中, 属多余项 (它不是任何功能的依赖)。
+  # gtk 负责文件选择器等基础接口 (niri 模块要求 gtk 存在)。
   xdg.portal = {
     enable = true;
     extraPortals = [
-      pkgs.xdg-desktop-portal-wlr
+      pkgs.xdg-desktop-portal-gnome
       pkgs.xdg-desktop-portal-gtk
     ];
   };

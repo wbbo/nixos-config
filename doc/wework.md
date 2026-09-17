@@ -4,19 +4,25 @@
 通过 Bottles (Flatpak) 运行 Windows 版企业微信的完整适配过程、成功路径与已知限制。
 适配日期 2026-09-10 ~ 09-12, 全部经实机验证。
 
+> **2026-09-17 更新**: 09-14 重装后 bottle 重建, 手工适配全部丢失 (runner 回落
+> soda、策略注册表/字体清空) —— 印证了「适配落在 prefix 内部, 非声明式即失」。
+> 现已全部固化进 `modules/home/programs/wework.nix` (适配服务 + ARGB 守护 +
+> 启动器), 重建 bottle 后一条 rebuild 自动重放, 见文末「七、声明式适配」。
+> 本文其余部分保留原始手工过程, 作为排查依据。
+
 ---
 
 ## 结论速览
 
-最终可用配置 = **caffe-10.0 runner + 禁 XWeb 硬件加速的策略注册表 + Maple Mono Hybrid 字体
-+ wework-fix 守护服务 (清理故障 ARGB 子窗) + fcitx5 XIM 输入法**。
+最终可用配置 = **caffe-10.0 runner + 禁 XWeb 硬件加速的策略注册表 + 字体替换 (界面字体
+→ Maple Mono NF CN) + wework-fix 守护服务 (清理故障 ARGB 子窗) + fcitx5 XIM 输入法**。
 
 已知残余限制: 右键菜单/弹框首次打开时会闪 1~2 帧黑 (毫秒级自愈), 属上游
 xwayland-satellite 在 NVIDIA 上的缺陷 (issue #502), 不影响功能。
 
 ---
 
-## 一、最终配置 (bottle 名「企业微信」)
+## 一、最终配置 (bottle 名「Work」, 2026-09-17 前为「企业微信」)
 
 ### Bottle 参数 (bottle.yml)
 
@@ -38,32 +44,30 @@ Runner 来源: Bottles 官方组件仓库 `https://proxy.usebottles.com/repo/com
 "HardwareAccelerationModeEnabled"=dword:00000000
 ; (同键位复制到 HKCU\SOFTWARE\Policies\Google\Chrome 与 \Chromium)
 
-; 2. 中英文界面字体 → 自定义混排字体 (见下)
+; 2. 中英文界面字体 → 原版 Maple Mono NF CN (见下)
 [HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes]
-"Microsoft YaHei"="Maple Mono NF CN Hybrid"
-"微软雅黑"="Maple Mono NF CN Hybrid"
+"Microsoft YaHei"="Maple Mono NF CN"
+"微软雅黑"="Maple Mono NF CN"
 ... (共 18 项: 宋体/SimSun/黑体/Segoe UI/Arial/Tahoma/Calibri 等)
 ```
 
 导入方式: 写好 UTF-16LE 的 .reg 放 prefix 内, 用
-`flatpak run --command=bottles-cli com.usebottles.bottles run -b 企业微信 -e <prefix>/drive_c/windows/regedit.exe /S "C:\xxx.reg"`。
+`flatpak run --command=bottles-cli com.usebottles.bottles run -b Work -e <prefix>/drive_c/windows/regedit.exe /S "C:\xxx.reg"`。
 注意: regedit 删除注册表值 (`"Key"=-`) 会**静默失败**, 删除需停 wineserver 后直接编辑 user.reg。
 
-### 字体: Maple Mono NF CN Hybrid
+### 字体替换: Microsoft YaHei 等 → Maple Mono NF CN
 
-等宽字体 Maple Mono 在中文观感上「英文显粗、中文显细」(视觉密度差), 故做混排:
-**英文用 Regular 字形 + 中文用 Medium 字形**。制作 (fonttools, glyf 表级替换):
+把 Windows 界面字体名 (雅黑/宋体/黑体/Segoe UI/Arial/Tahoma/Calibri 等 18 项) 统一
+映射到 **原版 Maple Mono NF CN** (系统 nix store 的 `MapleMono-NF-CN-7.9`, 由
+fonts.nix 装入宿主)。**不需要往 prefix 拷任何字体文件** —— wine 自动扫描宿主字体,
+登记在 prefix 的 `[Software\Wine\Fonts\External Fonts]` (`Z:\run\host\fonts\*.ttf`),
+替换名直接可解析。
 
-```python
-base = TTFont('MapleMono-NF-CN-Regular.ttf')   # 英文基准
-med  = TTFont('MapleMono-NF-CN-Medium.ttf')    # 中文字形来源
-# 对所有 CJK 码点 (U+2E80-FFEF 各区间, ~21000 字): base 的 glyf/hmtx 换为 med 的
-# 字体名改 "Maple Mono NF CN Hybrid" 避免与原版冲突, 保存进 prefix Fonts/
-```
-
-字体文件源: 系统 nix store 的 `MapleMono-NF-CN-7.9` (复制 Regular/Medium/Bold 三档)。
-注意: Noto CJK 的 VF ttc (CFF2) wine 枚举失败; fonttools CFF2 instancer 产物会引发
-崩溃循环 —— 但静态 TTF 间的 glyf 表替换安全可用。
+> **已退役: Maple Mono NF CN Hybrid 混排 (2026-09-17 移除)**。曾因等宽字体「英文显粗、
+> 中文显细」的视觉密度差, 自建混排字体 (英文 Regular 字形 + 中文 Medium 字形, fonttools
+> glyf 表级替换, 字体名换 Hybrid 避免与原版冲突, 拷进 prefix Fonts/)。该方案已移除,
+> 直接指向原版; 相关技术知识保留在下方「踩坑清单 · 显示/字体」—— CFF2/VF instancer 会
+> 引发 wine 崩溃循环, 静态 TTF 间 glyf 表替换是安全的, 将来若需重建混排可循此路。
 
 ### 网络
 
@@ -99,7 +103,7 @@ Inherited_Environment_Variables 列表含 XMODIFIERS, 自动传入)。fcitx5 侧
 
 **解决**:
 - 策略注册表禁 XWeb 硬件加速 (见上) —— 让主窗内容回到 GDI 层;
-- **wework-fix 守护服务** (`modules/home/programs/wework-fix.nix`): 2 秒轮询,
+- **wework-fix 守护服务** (`modules/home/programs/wework.nix`, 09-17 前为 wework-fix.nix): 1 秒轮询,
   自动 unmap「Depth 32 + 无名 + IsViewable + >10x10」的故障窗与 explorer 托盘窗,
   并写日志 (可审计); 实测菜单/弹框毫秒级自愈 (闪 1~2 帧黑);
 - 输入法由 fcitx5 体系负责 (见上)。
@@ -138,6 +142,7 @@ wine explorer.exe 的托盘窗 (159x19) 浮在桌面。**不可杀 explorer.exe 
 | satellite master 版 | 未修复 (0.8.2 同) |
 | Wine 虚拟桌面 (注册表 `HKCU\Software\Wine\Explorer\Desktop`) | 生效但 satellite 完全无法转发虚拟桌面窗口, 比黑窗更糟; Bottles 自身 virtual_desktop 参数不生效 (Bottles bug) |
 | 应用侧 `--disable-gpu*` 启动参数 | 主进程不转发给 CEF 子进程, 无效 |
+| **bottle 内跑 Windows 版 ToDesk** (09-17 实测) | 崩溃, **换 runner 家族同样失败** (对照实验): caffe-10.0 报 `Unhandled page fault` (读 0x20 空指针, 两次复现); soda-11.0-10 报 `unimplemented function ADVAPI32.dll.AuditSetSystemPolicy, aborting` —— 后者揭示根因: ToDesk 调用 wine **未实现**的 Windows 审计策略 API (远控软件的系统级安全审计), 两个家族都没有实现, 与 runner 选择无关。替代: RustDesk 原生包 (`modules/nixos/rustdesk.nix`); bottle 里的 ToDesk 留着无害 (不启动就不崩) |
 
 ---
 
@@ -159,13 +164,15 @@ wine explorer.exe 的托盘窗 (159x19) 浮在桌面。**不可杀 explorer.exe 
 
 - `writeShellScript` **不注入** runtimeInputs 的 PATH (脚本内命令必须绝对路径);
   `writeShellApplication` 才注入。
-- `writeShellApplication` 默认 `set -eu -o pipefail`: 依赖 grep 无匹配的轮询脚本
-  需 `bashOptions = [ "u" ]`。
 - HM 生成的配置文件是 **store 只读链接**: `sed -i` 会把它替换成普通文件 (试验后须
   `rm` + `cp` + `chmod 444` 还原); 无地址 sed 会误伤全文件。
 - HM 部署 unit 前须删除手动创建的同名 unit, 否则激活失败; flake 引用新文件须先
   `git add`。
 - flatpak 沙箱内应用**不吃宿主代理**, 需 `flatpak override --user --env=...`。
+- `writeShellApplication` 的 `bashOptions` **只认长选项名** —— 每项生成一行
+  `set -o <name>`, 写短名 `[ "e" "u" "o" ]` 会生成非法的 `set -o e`, 三行 set 全部
+  报错且**脚本照跑** (严格模式静默失效, 失去错误保护)。默认值
+  `[ "errexit" "nounset" "pipefail" ]` 已等价 `set -euo pipefail`, 一般不用设。
 
 **显示 / 字体**
 
@@ -177,6 +184,10 @@ wine explorer.exe 的托盘窗 (159x19) 浮在桌面。**不可杀 explorer.exe 
   instancer 产物会引发 wine 崩溃循环; 但**静态 TTF 间的 glyf 表级替换**安全可用。
 - Maple Mono CN 各字重的**中文字形是独立的** (实测 hash 不同);「英文比中文粗」是
   等宽字体拉丁/汉字的视觉密度差, 不是配置错误。
+- **niri 锁屏时 `grim` 截到的是锁屏界面** (深色底 + 「请输入密码并按 Enter 键。」+
+  天气/注销按钮), 不是桌面真实画面 —— 截图验证 GUI 前先查锁屏状态
+  (`loginctl show-session 4 -p LockedHint`, 或 journalctl --user -u niri 找
+  "locking/unlocking session")。09-17 曾把锁屏截图误读成 "TTY/黑屏", 白忙一轮。
 
 **wine 行为**
 
@@ -185,6 +196,19 @@ wine explorer.exe 的托盘窗 (159x19) 浮在桌面。**不可杀 explorer.exe 
 - 虚拟桌面模式下 satellite **完全无法转发窗口** (主窗 IsUnviewable), 比黑窗更糟 ——
   此路不通 (详见上节)。
 - Bottles 自身的 `virtual_desktop` 参数不生效 (Bottles bug)。
+
+**bottles-cli (09-17 补充, 声明式适配时实测)**
+
+- `bottles-cli reg add` 报 `stdout decoding failed` 且**静默不写入** —— CLI 写注册表
+  此路不通, 用 regedit 导 UTF-16LE .reg (见「一、最终配置」的导入方式)。
+- `bottles-cli edit --runner` 会触发 **wineprefix 更新 (wineboot)**, 更新拉起的
+  explorer 会执行企业微信的自启动键 (HKCU Run, 命令行带 `-min -autorun`) ——
+  整个 wine 会话被企业微信挂住, edit **41 分钟不返回**; 且用户没主动启动却多出一个
+  企业微信实例。对策: edit 之后必须 `bottles-cli stop -b` 收尾 (适配脚本已内置)。
+- 换 runner 需先把 runner 包解到 `runners/<name>/{bin,lib,share}` (包内顶层目录
+  strip 掉一层), 再 `edit --runner` —— 缺包时 edit **静默失败** (不报错也不切换)。
+- 判断进程别用 `pgrep -f 'WXWork.exe'` —— 同命令行含该字面量时自匹配 (与下方
+  pkill 自杀同源), 模式写 `WXWork[.]exe`。
 
 ---
 
@@ -207,13 +231,55 @@ niri msg --json windows
 ps -eo pid,comm
 
 # 服务状态
-systemctl --user status wework-fix fcitx5-xim-guard fcitx5
+systemctl --user status wework-fix wework-adapt fcitx5-xim-guard fcitx5
 DISPLAY=:0 xprop -root | grep XIM       # XIM 是否注册
+
+# 适配服务日志 (自检了哪些项 / 补了哪些项)
+journalctl --user -u wework-adapt --no-pager -n 20
 ```
 
 ## 六、关键操作备忘
 
-- 启动企业微信: `flatpak run --command=bottles-cli com.usebottles.bottles run -b 企业微信 -e "<prefix>/drive_c/Program Files (x86)/WXWork/WXWork.exe"`
+- 启动企业微信: `flatpak run --command=bottles-cli com.usebottles.bottles run -b Work -e "<prefix>/drive_c/Program Files (x86)/WXWork/WXWork.exe"` (或启动器 Mod+Space 搜「企业微信」)
 - **停机顺序**: 先停企业微信再动 satellite/X server (重启 X server 会杀死在跑的 wine 会话 —— wine 的 X 连接断开会 CriticalSection 死锁)
 - `pkill -f 'WXWork.exe'` 与同命令行含 `WXWork.exe` 字面量的启动参数会**自杀** —— 分两条命令执行
 - 强杀 (-9) 会损坏企业微信登录态 (需重新扫码); 改注册表后须杀 wineserver 才生效 (它常驻缓存)
+- 重建 bottle 后无需手工重做适配: `systemctl --user start wework-adapt` (或等定时器) 自动补齐三项配置
+
+## 七、声明式适配 (2026-09-17)
+
+`modules/home/programs/wework.nix` — 单模块聚合三块内容:
+
+| 组件 | 形式 | 职责 |
+|------|------|------|
+| `wework-adapt` 服务 + 30min 定时器 | oneshot, 幂等自检 | 补齐 runner / 策略注册表 / 字体替换 (§一 的三项, 已就绪即跳过) |
+| `wework-fix` 服务 | 1s 轮询守护 | unmap 故障 ARGB 子窗 + explorer 托盘横条 (§2.1 的桌面侧兜底) |
+| `wework-launch` + .desktop | 启动 wrapper | 启动器 (Mod+Space) 可搜可启动 |
+
+配套文件 (同目录 `wework/`):
+
+- `adapt.sh` — 适配脚本本体 (适配项: runner / 策略注册表 / 字体替换)。自检读 prefix 实际状态 (bottle.yml / user.reg) 而非
+  "跑过没有", 手工改坏后 30 分钟内自动纠回。企业微信运行中时跳过本轮 (改 runner
+  会打断会话), 由定时器在退出后重试。
+
+**bottle 改名 (2026-09-17, 「企业微信」→「Work」)**: bottle 名即目录名, 但 bottle.yml
+内的 External_Programs 路径与 Name/Path 字段以 **YAML unicode 转义** (`\u4F01...`) 存旧名,
+grep 中文搜不到 —— 改名 = 停会话 + `mv` 目录 + 按转义模式 `sed` 替换 bottle.yml。
+模块内引用 (adapt.sh 的 BOTTLE_NAME / wework-launch 的 -b / desktop Icon 路径) 同步改 Work。
+
+**幂等验证过的路径** (2026-09-17 实测): 三项就位 → 全部跳过; 删掉策略注册表键
+→ 下轮自动写回; 手工切回 soda runner → 下轮自动换回 caffe (前提 runner 包已在本地);
+字体替换目标从 Hybrid 改为原版 → 下轮自动重导入并清掉 prefix 里的旧字体文件。
+
+### 自动化边界 (刻意设计, 勿"补全")
+
+重装/换机时的恢复分层 —— 只自动化两层, 第三层刻意手工:
+
+| 层 | 机制 |
+|----|------|
+| Bottles 应用本体 | ✅ `flatpak-apps` 服务自动补装 (flatpak.nix, 与 com.tencent.WeChat 同机制) |
+| 容器内适配 (runner/注册表/字体) | ✅ `wework-adapt` 自动重放 (本文档 §七) |
+| **容器创建 + 企业微信安装** | ⚠️ **刻意不自动化**: 容器与 prefix 靠 `@persist` 保留 (本机重装即恢复); 清 persist/换新机时手工建容器 + 装企业微信 —— Windows 安装器静默参数不保证可靠、官方下载 URL 随版本漂移, 自动化维护成本高于收益 |
+
+同样刻意不做的: bottle 内 Windows 版 ToDesk 的安装自动化 (wine 下根本跑不起来,
+见「已排除的路线」)。
