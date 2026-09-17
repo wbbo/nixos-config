@@ -205,23 +205,20 @@ let
 
 
   def fix(dpy, wid, tag):
-      """ARGB 外框窗: 用 XShape 把 Bounding 区剪成 0 面积, **不 unmap**。
+      """ARGB 外框窗 / explorer 托盘窗: unmap 掉。
 
-      为什么不用 unmap (2026-09-18 实测): unmap 之后 satellite 不会把 wl_buffer
-      detach, Wayland surface 仍留着**最后一帧**(那圈白色圆角边框) → niri 里留下
-      一个"幽灵窗", 条纹/黑块不消失, 还会在布局里占位。XShape 让窗口保持 mapped
-      (应用的事件路径完全不受影响), 只是可见区为空 → 什么都不画, 也没有 ghost。
-      仅剪 Bounding, 不动 Input, 输入区照旧。
-      ShapeBounding=0 / ShapeSet=0 / 0 个矩形 = 空区域。
+      为什么必须藏住: 这些 ARGB 外框窗的内容是"全透明 + 一圈白色圆角边框",
+      本该围着应用窗画边框; 但 niri 把它当**独立窗口**摆放, 边框围不住应用窗。
+      在 dmabuf 路径下 (alpha 被 niri 丢弃, 见 doc §8.3) 它表现为**整块黑盖住
+      应用** —— 这才是必须摘掉它的原因。
       """
-      if tag == "ARGB":
-          xe.XShapeCombineRectangles(dpy, wid, 0, 0, 0, None, 0, 0, 0)
-          x.XSync(dpy, 0)
-          print(f"shape-empty {tag} {hex(wid)} ok", flush=True)
-      else:
-          x.XUnmapWindow(dpy, wid)
-          x.XSync(dpy, 0)
-          print(f"unmap {tag} {hex(wid)} ok", flush=True)
+      # 注: 曾改用 XShape 把可见区剪成 0 面积 (想避免 unmap 留"幽灵帧"),
+      # 但实测 XShape 挡不住 Xwayland 呈递的 buffer —— 窗口照样显示, 且那时
+      # 用户报的"白条纹"其实溯源到了 **niri 的 focus ring** (与这些窗无关, 见
+      # doc/wework.md §8.11)。故回到简单可靠的 unmap。
+      x.XUnmapWindow(dpy, wid)
+      x.XSync(dpy, 0)
+      print(f"unmap {tag} {hex(wid)} ok", flush=True)
 
 
   def handle(dpy, wid):
