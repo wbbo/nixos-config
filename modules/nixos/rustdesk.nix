@@ -21,8 +21,16 @@
 
   systemd.services.rustdesk = {
     description = "RustDesk Service (remote control daemon)";
-    after = [ "network.target" "graphical.target" ];
-    wants = [ "graphical.target" ];
+    # ⚠ 不能写 After=graphical.target (或 wantedBy=graphical.target): 本单元
+    # wantedBy=multi-user.target, systemd 会隐式补 Before=multi-user.target,
+    # 而 graphical.target 标准地 After=multi-user.target —— 三者成环:
+    #   rustdesk → multi-user → graphical → rustdesk
+    # 症状: nixos-rebuild 切换时报 "Transaction order is cyclic"
+    # (graphical.target 启动失败, 退出码 4); 上次切换侥幸靠 systemd 删作业绕过,
+    # 换一次事务就绕不过。2026-09-17 实测 (system-13 那次切换 exit 4)。
+    # 远控服务本身无需等桌面: 屏幕捕获走 xdg-desktop-portal (连接时才需要会话,
+    # 那时桌面早已就绪), 守护进程开机起在 multi-user 即可。
+    after = [ "network.target" ];
     serviceConfig = {
       Type = "simple";
       ExecStart = "${pkgs.rustdesk}/bin/rustdesk --service";
