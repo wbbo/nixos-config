@@ -543,11 +543,14 @@ niri 自己会画窗口阴影, 应用这圈是多余且错位的 → 仍需 unma
 (`bottles-cli stop` 没杀掉旧的那个), 陈旧实例的窗口盖在上面吞掉了点击。
 教训: 重启企业微信前先确认 `ps -eo comm | grep WXWork` 真的空了。
 
-**上游**: 已写好 niri issue 稿 (英文, 含协议追踪 + A/B 数据 + 复现步骤), 存在
-`~/.local/share/argb-repro/niri-issue.md` —— 待发 (本机 token 无 GitHub 写权限)。
-标题: *NVIDIA: alpha is lost when compositing client buffers delivered via
-linux-dmabuf — transparent windows render as opaque black*。同时
-xwayland-satellite#502 需要更正责任归属 (指向 niri, 而非 satellite 的"捕获路径")。
+**上游 (2026-09-18 已发)**:
+- niri issue: **https://github.com/niri-wm/niri/issues/4612** —— *NVIDIA: alpha is lost
+  when compositing client buffers delivered via linux-dmabuf — transparent windows
+  render as opaque black* (含协议追踪 + A/B 数据 + 复现步骤)
+- xwayland-satellite#502 的更正评论: https://github.com/Supreeeme/xwayland-satellite/issues/502#issuecomment-5718461402
+  (更正责任归属指向 niri, 并附菜单黑角的独立结论)
+
+稿子留档在 `~/.local/share/argb-repro/{niri-issue,i502-comment}.md`。
 
 **教训**: 我曾把"Xwayland 用 `-glamor none` 时大窗不转发 + GL 错误"记进「已排除的
 路线」, 据此认为 shm 路径不可用。实际上那条 GL 错误来自 **niri 的渲染器**, 与
