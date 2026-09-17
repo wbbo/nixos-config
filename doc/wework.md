@@ -484,9 +484,27 @@ wl_surface 并把 buffer 提交给 niri 的(Xwayland 就是 X server 本身), �
 Wine/CEF 的呈现路径失败很可能连带弄坏它的事件循环 —— 这类问题只有**实际点一下**
 才暴露, 光看抓屏看不出来。
 
-真因 (niri 的 dmabuf alpha 丢失) 与上游 issue 稿仍然成立, 只是本机没有可用的
-绕过手段; 现状 = **dmabuf + 守护 unmap 外框窗** (黑窗/白条都被摘掉, 代价是每次
-交互闪 1~2 帧)。
+真因 (niri 的 dmabuf alpha 丢失) 与上游 issue 稿仍然成立; 现状 = **dmabuf +
+守护用 XShape 清空外框窗** (见 §8.10)。
+
+### 8.10 守护改用 XShape 清空外框窗 (2026-09-18 收尾)
+
+**为什么不再用 unmap**: unmap 之后 satellite **不会把 wl_buffer detach**, Wayland
+surface 仍留着**最后一帧**(那圈白色圆角边框) → niri 里留下一个"幽灵窗": 看不见
+却又占位、且那圈白边**一直显示**, 就是用户报的"竖条纹"。
+
+**改法**: 用 XShape 把外框窗的 **Bounding 区剪成 0 面积**, 窗口保持 mapped:
+
+```python
+xe.XShapeCombineRectangles(dpy, wid, 0, 0, 0, None, 0, 0, 0)   # Bounding/Set/空
+```
+
+- 窗口还在 → 应用的事件路径完全不受影响 (**只剪 Bounding, 不动 Input**)
+- 可见区为空 → 什么都不画 → 既没有黑块也没有白条, 也没有 ghost
+- 回读验证: `XShapeQueryExtents` → `bounding_shaped=1, 区域 0x0` ✓
+- 托盘窗 (explorer.exe) 仍用 unmap (它没有这个问题)
+
+依赖加了 `pkgs.libxext`。
 
 
 
