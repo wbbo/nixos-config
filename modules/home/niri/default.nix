@@ -3,6 +3,27 @@
 # 即按需自动 spawn (on-demand, 无 X11 客户端时零资源); 缺它则 X11 应用无法运行。
 { pkgs, lib, ... }:
 let
+  # ── Xwayland 走 shm: 绕过 niri 的 dmabuf alpha 丢失 (2026-09-18) ──────────
+  # niri(smithay)在 **dmabuf 路径**上会丢掉 ARGB buffer 的 alpha 通道。实测
+  # (同一条 AR24 buffer, 同窗口同尺寸同聚焦, 只换渲染路径):
+  #   dmabuf (默认) → 透明区渲染成不透明黑, 新增黑 46.0%
+  #   shm (-glamor none) → 正常, 新增黑 9.9% (那部分是 niri 给聚焦窗画的阴影)
+  # 协议追踪证实 Xwayland 与 satellite 两段都传的是 AR24(带 alpha), 故责任
+  # 在 niri 的 dmabuf 导入 (NVIDIA 专有路径)。
+  #
+  # 企业微信(Wine/CEF)会创建透明的 Depth-32 顶层窗当窗口外框/阴影/菜单框,
+  # alpha 一丢就变成整块黑盖住应用 —— 这是 dmabuf 丢 alpha 的真因 (不是 satellite
+  # 的捕获问题, 它只是转发 buffer)。
+  #
+  # niri 没有给 xwayland-satellite 传参的配置项, 故用 PATH 里优先级最高的
+  # ~/.local/bin 放 wrapper; niri 按 PATH 找到并 exec 它。satellite 把
+  # `-glamor none` 翻译成 Xwayland 的 `-shm` (走 CPU 拷贝)。
+  # 代价: X11 窗口全部走 CPU 拷贝而非 GPU dmabuf —— 办公类应用无感, 游戏/
+  # 视频类 X11 应用会有性能损失。**niri 修好该 bug 后本 wrapper 可退役。**
+  xwayland-satellite-shm = pkgs.writeShellScript "xwayland-satellite" ''
+    exec ${pkgs.xwayland-satellite}/bin/xwayland-satellite "$@" -glamor none
+  '';
+
   # 应用持久化的输出设置: niri-res / Noctalia 顶栏修改时写入
   # ~/.local/state/niri-resolution|niri-scale, 本脚本由 config.kdl
   # spawn-at-startup 调用, 启动时覆盖声明式默认。
@@ -215,6 +236,11 @@ let
 in
 {
   home.packages = [ niri-apply-resolution eye-care record-toggle record-encoder-probe pkgs.xwayland-satellite ];
+
+  # X11 兼容层走 shm 的 wrapper (理由见文件头 let 块注释)。
+  # PATH 顺序: ~/.local/bin 在 niri 的 PATH 里排第一, 故 niri spawn
+  # "xwayland-satellite" 时命中的是这个 wrapper 而不是 profile 里的真身。
+  home.file.".local/bin/xwayland-satellite".source = xwayland-satellite-shm;
 
   # force = true: 接管首启自动生成的官方默认 config.kdl
   # (全新安装首启 niri 会生成默认模板, 非 HM 链接; 无 force 时 HM clobber
