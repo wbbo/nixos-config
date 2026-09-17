@@ -24,6 +24,8 @@ let
   # pkgs.libx11 (非 pkgs.xorg.libX11 —— 后者是废弃别名, 会触发求值警告;
   # 两者指向同一个包, 产物路径不变)
   LIBX11 = "${pkgs.libx11}/lib/libX11.so.6"
+  # XShape: 把外框窗的可见区剪成 0 面积 (比 unmap 更适合 —— 见 fix() 注释)
+  LIBXEXT = "${pkgs.libxext}/lib/libXext.so.6"
 
   SWEEP_INTERVAL = 5.0   # 秒; 兜底全量清扫周期 (事件之外的保险)
   CONNECT_RETRY = 5.0    # 秒; X 未就绪时的重连间隔
@@ -71,6 +73,7 @@ let
 
 
   x = ctypes.CDLL(LIBX11)
+  xe = ctypes.CDLL(LIBXEXT)
   x.XOpenDisplay.restype = ctypes.c_void_p
   x.XOpenDisplay.argtypes = [ctypes.c_char_p]
   x.XDefaultRootWindow.restype = ctypes.c_ulong
@@ -97,6 +100,9 @@ let
                            ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)),
                            ctypes.POINTER(ctypes.c_uint)]
   x.XUnmapWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+  xe.XShapeCombineRectangles.argtypes = [
+      ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+      ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
   x.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
   x.XFree.argtypes = [ctypes.c_void_p]
 
@@ -199,9 +205,23 @@ let
 
 
   def fix(dpy, wid, tag):
-      x.XUnmapWindow(dpy, wid)
-      x.XSync(dpy, 0)
-      print(f"unmap {tag} {hex(wid)} ok", flush=True)
+      """ARGB 外框窗: 用 XShape 把 Bounding 区剪成 0 面积, **不 unmap**。
+
+      为什么不用 unmap (2026-09-18 实测): unmap 之后 satellite 不会把 wl_buffer
+      detach, Wayland surface 仍留着**最后一帧**(那圈白色圆角边框) → niri 里留下
+      一个"幽灵窗", 条纹/黑块不消失, 还会在布局里占位。XShape 让窗口保持 mapped
+      (应用的事件路径完全不受影响), 只是可见区为空 → 什么都不画, 也没有 ghost。
+      仅剪 Bounding, 不动 Input, 输入区照旧。
+      ShapeBounding=0 / ShapeSet=0 / 0 个矩形 = 空区域。
+      """
+      if tag == "ARGB":
+          xe.XShapeCombineRectangles(dpy, wid, 0, 0, 0, None, 0, 0, 0)
+          x.XSync(dpy, 0)
+          print(f"shape-empty {tag} {hex(wid)} ok", flush=True)
+      else:
+          x.XUnmapWindow(dpy, wid)
+          x.XSync(dpy, 0)
+          print(f"unmap {tag} {hex(wid)} ok", flush=True)
 
 
   def handle(dpy, wid):
