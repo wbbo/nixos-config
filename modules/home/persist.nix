@@ -87,8 +87,10 @@
       # cert9.db 的时间戳 = 重装后首启时刻(22:40), 旧数据无痕。Thunderbird 一直在
       # 清单里, 唯独浏览器被漏掉。
       # 注: 缓存目录 ~/.cache/mozilla 体积大且可重建, 不持久化;
-      # search.json.mozlz4 由 HM 管(火狐运行时会把它改写成实体文件, 见 build.sh
-      # 预检告警), firefox.nix 的 search.force = true 会在激活时强制覆盖回软链。
+      # search.json.mozlz4 由 HM 管 (firefox.nix 的 search.force = true):
+      # 火狐运行时会把它改写成实体文件, HM 每次激活用 ln -Tsf 强制覆盖回软链。
+      # 这是 force 管理路径的正常现象, build.sh 预检已按 HM 的 forcedPaths
+      # 清单跳过, 不再告警 (2026-09-18)。
       ".config/mozilla"
       # Flatpak 应用数据 (系统级装 /var/lib/flatpak 跨 rebuild 天然保留, 但
       # ~/.var/app/<app> 在 @root 属家目录需显式持久化):
