@@ -175,19 +175,45 @@ target_home() {
 }
 
 preflight_hm_clobber() {
-  local h hf rel n=0
+  local h genc hf rel n=0
   h="$(target_home)"
   if [ -z "$h" ] || [ ! -d "$h" ]; then
     return 0
   fi
-  hf="$(readlink -f "$h/.local/state/home-manager/gcroots/current-home/home-files" 2>/dev/null)" || true
+  # 注意: genc 是**未解析**的 gcroots 路径 —— home-files 本身是指向
+  # /nix/store/<hash>-home-manager-files 的符号链接, 对它 readlink -f 后再
+  # dirname 只会得到 /nix/store (activate 在代际目录里, 不在 store 树里)。
+  genc="$h/.local/state/home-manager/gcroots/current-home"
+  hf="$(readlink -f "$genc/home-files" 2>/dev/null)" || true
   if [ -z "$hf" ] || [ ! -d "$hf" ]; then
     return 0
   fi
+
+  # force 清单 —— 取自 HM 自己的产物, 不维护第二份列表 (force 增删自动跟随):
+  # 激活脚本调用的 check-link-targets.sh 里有 `forcedPaths=("$HOME"/a "$HOME"/b)`,
+  # 由 HM 依据各文件的 force = true 生成。这些路径 HM **跳过冲突检查**,
+  # linkGeneration 又用 `ln -Tsf` 强制替换, 实体文件永远不会 clobbered 失败 ——
+  # 应用运行时会改写它们 (如 firefox 的 search.json.mozlz4 / fcitx5 的 profile),
+  # 属正常现象。纳入告警只会制造每次 rebuild 都出现的噪声, 让人对真信号脱敏。
+  local -a forced=()
+  local check_script fp
+  check_script="$(grep -oE '/nix/store/[a-z0-9]+-check-link-targets\.sh' "$genc/activate" 2>/dev/null | head -1)" || true
+  if [ -n "$check_script" ] && [ -r "$check_script" ]; then
+    # [^" )] 排除右括号 —— 数组字面量的末尾是 `"...mozlz4)` (Bash 数组以 ) 收尾),
+    # 不排除会把最后一条的 ) 一起吞进来, 那条就永远匹配不上 (实测踩到)
+    mapfile -t forced < <(grep -oE '"\$HOME"/[^" )]+' "$check_script" | sed 's|^"\$HOME"/||')
+  fi
+
   while IFS= read -r -d '' f; do
     rel="${f#"$hf/"}"
     if [ -L "$h/$rel" ]; then continue; fi  # 正常: HM 的符号链接
     if [ ! -e "$h/$rel" ]; then continue; fi # 不存在: 无冲突
+    for fp in "${forced[@]}"; do
+      # 与 HM 自身一致用前缀匹配 (check-link-targets.sh: $targetPath == $forcedPath*)
+      if [ "${rel#"$fp"}" != "$rel" ]; then
+        continue 2
+      fi
+    done
     if [ "$n" -eq 0 ]; then
       warn "HM 管理路径下出现实体文件 (定时炸弹, 见 CLAUDE.md 代码审查记录):"
     fi
@@ -198,6 +224,9 @@ preflight_hm_clobber() {
     warn "共 $n 个。**内容跨代际变化时** HM 才拒绝覆盖导致激活失败, 平时静默 ——"
     warn "本次构建仍可能成功。建议顺手清掉 (确认内容后):"
     warn "  mv <该文件> <该文件>.stale-\$(date +%Y%m%d)   # HM 随即重建符号链接"
+    if [ "${#forced[@]}" -gt 0 ]; then
+      warn "  (${#forced[@]} 个 force = true 管理的路径已跳过 —— 那些位置 HM 每次激活强制覆盖, 无害)"
+    fi
   fi
 }
 

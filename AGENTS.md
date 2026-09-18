@@ -207,7 +207,7 @@ NIX_CONFIG='netrc-file = /dev/null' nix flake update noctalia   # 临时匿名, 
      ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key > /tmp/age-priv.txt
      chmod 600 /tmp/age-priv.txt
      SOPS_AGE_KEY_FILE=/tmp/age-priv.txt sops set secrets/secrets.yaml \
-       "[\"github-token\"]" "\"github_pat_XXX\""
+       "[\"github-token\"]" "\"ghp_XXX\""
      rm -f /tmp/age-priv.txt
    '
    ```
@@ -381,6 +381,14 @@ profile) 各有一条 `force = true` 记录同一模式。区别在于 **`system
   在 switch 前报出 HM 管理路径下的实体文件 (实测 12ms / 87 条目)。**只告警不中止**:
   内容未变时本次构建本可成功, 不该被预检拦下。局限: 只覆盖当前代际已在管的路径,
   新代际新增路径撞上实体文件仍由 HM 自行报错。
+- (2026-09-18) 预检按 **HM 自己的 force 清单**过滤, 消除误报: 从代际目录 `activate`
+  引用的 `check-link-targets.sh` 提取 `forcedPaths=(...)` (HM 依各文件的 force = true
+  生成) —— 这些路径 HM 跳过冲突检查、`ln -Tsf` 强制替换, 实体文件无害。此前
+  firefox 的 `search.json.mozlz4` (运行时必被改写) 每次 rebuild 都误报, 噪声淹没真信号。
+  清单从 HM 产物实时提取, 不维护第二份。两个坑: ① gcroots 的 `home-files` 是符号
+  链接, 对它 `readlink -f` 后 `dirname` 只得到 `/nix/store`, 定位 activate 必须用
+  未解析路径; ② `grep -oE '"\$HOME"/[^"]+'` 会把数组字面量末尾的 `)` 一起吞掉,
+  字符类须排除 `)`, 否则最后一条永不匹配。
 - **排查纪律**: 查看 store 里的文件内容用 `cat` 直接读, 或落到 `/tmp`;
   **绝不要 `cp` 到 `$HOME` 下的 HM 管理路径** —— 这次的 `cp` 就是为了"方便反复看"。
 - 同批修掉的相邻隐患: `build.sh` 的 adapt/restore 改为 `trap ... EXIT` 兜底 ——
