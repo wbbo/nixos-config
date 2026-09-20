@@ -40,6 +40,9 @@
       ".cache/uv"
       "code"                   # 源代码仓库 (含本配置, snapper 保护)
       "apps"                   # 应用/工具目录 (ventory 等, snapper 保护)
+      # virtiofs 虚拟机共享目录: libvirt win11 的 <filesystem> 源 (host↔guest
+      # 双向传文件, 替代 virt-manager 没有的剪贴板文件复制), 交换文件不能易失。
+      "vm-share"
       # Pictures: 图片收藏 + 壁纸库 + niri 内置截图输出。
       # Noctalia 轮播池与视频壁纸在 Pictures/Wallpapers 下, 见 noctalia.nix;
       # niri 的 screenshot-path 指向 Pictures/screenshot (config.kdl) ——
