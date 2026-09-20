@@ -84,6 +84,25 @@
     };
   };
 
+  # Bottles (企业微信) 沙箱放行宿主 ~/code (只读) —— 文件对话框选宿主文件的前提。
+  # 为什么: 剪贴板里"复制文件"只是 URI 清单, 应用要按路径回读宿主文件; 沙箱默认
+  # 看不见家目录 (实测沙箱内 /home/wbb 只剩 Games), 回读必然失败 → 粘贴/拖拽
+  # 静默无反应。详见 doc/wework.md。
+  # 为什么用 tmpfiles 直写: 上游 NixOS flatpak 模块没有 overrides 选项 (那是社区
+  # nix-flatpak 的), flatpak override CLI 又是机器本地状态、重装即丢。规则:
+  #   d  先建 /var/lib/flatpak/overrides (可能不存在; 路径排序保证 d 在 f+ 之前)
+  #   f+ 幂等重写 override 文件 (26.05 systemd 实测支持截断重写), 每次 boot/
+  #      switch 收敛到声明内容; 内容格式与 flatpak override 自写的 INI 一致
+  #      (实测可解析)。要放行更多目录, 在 filesystems= 行内以 ; 追加即可。
+  # :ro 只够发送文件; 若需把收到的文件另存进 ~/code, 改成 :rw。
+  systemd.tmpfiles.settings."60-flatpak-bottles-override" = {
+    "/var/lib/flatpak/overrides".d = { };
+    "/var/lib/flatpak/overrides/com.usebottles.bottles"."f+".argument = ''
+      [Context]
+      filesystems=/home/wbb/code:ro;
+    '';
+  };
+
   # GNOME Software —— Flatpak 图形化应用商店 (搜索/安装/更新)
   # NixOS 无 PackageKit 后端 (系统包由 Nix 管理), 该应用仅操作 Flatpak, 二者不冲突。
   environment.systemPackages = with pkgs; [
