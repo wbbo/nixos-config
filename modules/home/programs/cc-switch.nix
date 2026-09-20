@@ -111,6 +111,18 @@
       # 逐 app 开启 (claude 15721 / codex 15722 / gemini 15723)。
       # socket 未就绪时重试; 彻底失败不阻断 (daemon 存活, 手动可补)。
       ExecStartPost = pkgs.writeShellScript "cc-switch-daemon-enable-proxy" ''
+        # enable 前先从 S3 拉一次云端配置 (provider 等以云端为准落 db)。
+        # 开机网络未就绪时重试 3 次 x2s; 失败不阻断 (用本地 db 继续 enable)。
+        err=""
+        ok=""
+        for i in 1 2 3; do
+          if err=$("$HOME/.local/bin/cc-switch" config s3 download 2>&1); then
+            ok=1
+            break
+          fi
+          [ "$i" = 3 ] || sleep 2
+        done
+        [ -n "$ok" ] || echo "警告: cc-switch config s3 download 失败: $err"
         for app in claude codex gemini; do
           err=""
           ok=""
