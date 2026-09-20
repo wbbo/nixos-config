@@ -27,6 +27,8 @@
     ./steam.nix
     ./udisks.nix
     ./printing.nix
+    ./proxy-lan.nix
+    ./ssh-temp-password.nix
     ./home-manager.nix
   ];
 }

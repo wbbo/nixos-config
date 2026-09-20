@@ -187,7 +187,9 @@ ${prefillCmds}
     # 无任何组件把 DNS 指向 127.0.0.1)。要做"LAN 设备把本机当 DNS"的旁路由时
     # 再加回, 且建议用 networking.firewall.interfaces.<内网网卡>.allowed{UDP,TCP}
     # Ports 按接口放行 —— 全局 allowedUDPPorts/TCPPorts 等于在任何接入的网络上
-    # 开放解析器 (allow-lan 放开的 7890 代理端口同理, 自行取舍)。
+    # 开放解析器 (代理端口 7890 的 LAN 共享走 proxy-lan 动态开关 —— allow-lan
+    # 保持 true 让 mihomo 绑全部接口, 防火墙默认拒绝 + sudo proxy-lan on|off
+    # 插拔放行规则, 见 proxy-lan.nix)。
     # resolv.conf 静态化: 三条公网 DNS (MAXNS=3 恰满, 全被劫持回 mihomo, 写谁
     # 只是语义摆设), 真正作用是把网关/内网 DNS 挡在列外。关 resolvconf 防
     # openresolv -u 把静态文件覆盖成 NM dns=none 下的空文件 (其 wrapper 变为

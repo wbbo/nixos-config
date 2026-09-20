@@ -20,7 +20,10 @@
 
     networking.firewall = {
       enable = true;
-      allowedTCPPorts = [ 22 ]; # SSH
+      # 22 全局放行 —— 端口可达性与认证强度是两个独立维度: 认证层收紧为
+      # key-only + 临时密码开关 (见 services.nix / ssh-temp-password.nix),
+      # 不做来源 IP 限制 (曾按固定管理机白名单过, DHCP 换地址即失联, 已撤)。
+      allowedTCPPorts = [ 22 ];
       allowedUDPPorts = [ ];
     };
   };

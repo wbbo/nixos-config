@@ -154,8 +154,9 @@ if [ -x "$MIHOMO_DIR/mihomo" ]; then
        && iptables -I INPUT -p tcp --dport 7890 -j ACCEPT 2>/dev/null \
        && iptables -I INPUT -p tcp --dport 9090 -j ACCEPT 2>/dev/null; then
       info "防火墙已放行入站 7890/9090 (tcp), LAN 可访问"
-      # 控制 API 在 config.yaml 只绑 127.0.0.1:9090 (回环), LAN 面板访问经
-      # PREROUTING DNAT 转到回环; conntrack 自动回程, 无需额外规则。失败仅
+      # 7890: 模板 allow-lan: true, mihomo 绑全部接口, iptables 放行即通。
+      # 9090: 控制 API 在 config.yaml 只绑 127.0.0.1:9090 (回环), LAN 面板访问
+      # 经 PREROUTING DNAT 转到回环; conntrack 自动回程, 无需额外规则。失败仅
       # LAN 面板不可达, 本机 API/代理不受影响。Live CD 重启后规则消失 (临时)。
       # DNAT 到 127.0.0.1 的包默认被内核判 martian 丢弃 (route_localnet=0),
       # LAN→:9090 静默不通 (实测踩坑); 显式放行 127/8 经非 lo 接口
