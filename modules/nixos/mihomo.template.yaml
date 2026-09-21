@@ -8,7 +8,7 @@
 # 表现为 VM/Docker 有 DNS (fake-ip) 与 ICMP 但一切 TCP 超时。关闭后 TCP 回归
 # TUN, 由 mixed 栈接管: TCP 走 system 栈 (回写内核本地 listener), UDP 走 gvisor;
 # 该路径所需的 rp_filter loose / trustedInterfaces=[Mihomo] 配套已在 mihomo.nix。
-tun: {auto-redirect: false, auto-detect-interface: true, auto-route: true, device: "Mihomo", dns-hijack: ["any:53"], mtu: 1500, route-exclude-address: ["10.65.4.0/23", "10.65.64.0/20", "192.168.0.0/16", "172.16.0.0/12", "127.0.0.0/8"], stack: "mixed", strict-route: false, enable: true}
+tun: {auto-redirect: false, auto-detect-interface: true, auto-route: true, device: "Mihomo", dns-hijack: ["any:53"], mtu: 1500, route-exclude-address: ["10.65.0.0/16", "10.65.64.0/20", "192.168.0.0/16", "172.16.0.0/12", "127.0.0.0/8"], stack: "mixed", strict-route: false, enable: true}
 proxies:
 # 订阅: provider1/provider2/... 由 activationScripts 按订阅 URL 列表动态生成
 proxy-providers:
