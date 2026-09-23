@@ -115,7 +115,7 @@ spawn-at-startup "wl-clip-persist" "--clipboard" "regular"
 // 合盖 → 仅锁屏 (noctalia lock); logind 对合盖全设 ignore 不挂起
 // (modules/nixos/services.nix HandleLidSwitch*=ignore)。
 // 注意不要用 session lock-and-suspend —— 那会绕过 logind 配置直接挂起。
-// 休眠入口在会话菜单 (Mod+Alt+L → sudo hibernate-now 直写内核, 见 boot.nix)。
+// 休眠入口在会话菜单 (Ctrl+Alt+Shift+L → sudo hibernate-now 直写内核, 见 boot.nix)。
 // 开盖输入密码解锁; niri 合盖自动关内屏/开盖恢复, 无需配置。
 switch-events {
     lid-close { spawn "noctalia" "msg" "session" "lock"; }

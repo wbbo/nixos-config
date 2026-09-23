@@ -291,7 +291,7 @@ in {
     annotate = true
 
     # ============================================================
-    # 会话菜单 (binds.kdl Mod+Alt+L → panel-toggle session)
+    # 会话菜单 (binds.kdl Ctrl+Alt+Shift+L → panel-toggle session)
     # actions 数组整体替换 noctalia 默认列表 (lock/logout/lock_and_suspend/
     # reboot/shutdown), 故逐项声明并在中间插入"休眠"。
     # 休眠无内置动作, 用 command 类型: 先锁屏再休眠 (与 lock_and_suspend
