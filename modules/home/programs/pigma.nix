@@ -16,6 +16,8 @@
 #   2447e4e y7dl submodule 指向 wbbo/y7dl@08c63e6 (同款 TOML 修复,
 #           .gitmodules 同步改; 曾拼错 gitlink 全量 SHA 致 fetchSubmodules
 #           "not our ref", amend 修正 —— 训: 短 SHA 必须实测补全, 不许手拼)
+#   eb83bde #88 修复升级: get().unwrap_or() 全文兜底改为 debug_truncate
+#           helper (最近字符边界截断, debug 日志体积有界)
 # 上游出新 tag 时可在 fork 上 rebase, 或把 owner 换回 akirco 并恢复 postPatch。
 # 注: 曾内置 pigma-mpris 桥 (轮询 status --json 发布 MPRIS 供 Noctalia
 # 媒体组件识别), 已移除恢复默认 —— pigma 无 MPRIS, Noctalia 媒体卡片不
@@ -29,11 +31,11 @@ let
     src = pkgs.fetchFromGitHub {
       owner = "wbbo";
       repo = "pigma";
-      rev = "2447e4ed8d4cafe8db2e7510b3e8de61de5db50c";
+      rev = "eb83bde083a2515d2236eaab9517679be8192924";
       # FOD 输出路径由该 hash 决定: 喂旧 hash 时 store/缓存里同名 outPath 直接
       # 替换旧源码 (不重新拉取), 构建"看似正常"实为旧文件 —— 换 rev 必须同步
       # 换 hash (fakeHash 试错拿 got: 值); 2026-09-25 切 fork 实测踩坑
-      hash = "sha256-/7MA0KsjRzOymGvoVjdF4MkyJ6dDeFIvdRESRrx26Ls=";
+      hash = "sha256-lX2Y5egavyKIcZmk2ARDnSjMEdCj3tQsBTgA+kbCNPY=";
       # crates/y7dl 是 git submodule (sonar 的路径依赖), GitHub tarball
       # 不含 submodule, 缺它则 cargo 解析 sonar 依赖时报 ENOENT
       # (submodule 现指向 wbbo/y7dl@08c63e6, 见 .gitmodules)
