@@ -1,6 +1,6 @@
 # nixos-config
 
-基于 **NixOS 26.05 Flakes** 的桌面配置（[Niri](https://github.com/YaLTeR/niri) + [Noctalia Shell](https://github.com/noctalia-dev/noctalia-shell)，btrfs 五子卷由 [disko](https://github.com/nix-community/disko) 管理，secrets 用 [sops-nix](https://github.com/Mic92/sops-nix) + SSH host key 加密）。
+基于 **NixOS 26.05 Flakes** 的桌面配置（[Niri](https://github.com/YaLTeR/niri) + [Noctalia Shell](https://github.com/noctalia-dev/noctalia-shell)，btrfs 四子卷 + 嵌套 `.snapshots` 快照子卷由 [disko](https://github.com/nix-community/disko) 管理，secrets 用 [sops-nix](https://github.com/Mic92/sops-nix) + SSH host key 加密）。
 
 按**两个场景**组织：安装与日常使用（场景一）/ 重装与更换设备（场景二）。用户名/主机名在 `hosts/default/local.nix` 定制，secrets 在 `secrets/`。
 
@@ -319,8 +319,10 @@ nixos-config/
   - `@root` → `/` (compress=zstd:3, noatime)
   - `@nix` → `/nix` (compress=zstd:3, noatime)
   - `@persist` → `/persist` (Snapper 保护, compress=zstd:3, noatime)
+    - `.snapshots` (嵌套子卷, snapper 快照存储, 无需挂载)
   - `@swap` → `/swap` (swapfile 大小按内存自适应, 不压缩)
-  - `@snapshots` → `/persist/.snapshots`
+
+另常驻挂载文件系统顶层 (`subvolid=5`) 至 `/mnt/btrfs-root`, 供快照工具枚举子卷树。
 
 `resume_offset` 由 initrd 脚本自动检测，换盘后重建即适配。swapfile 大小由 `scripts/adapt-hardware.sh` 按内存重写为与内存等大（上取整；休眠要求 swap ≥ 内存；换内存后 rebuild 自动跟随）。
 

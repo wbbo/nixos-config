@@ -112,7 +112,7 @@ Inherited_Environment_Variables 列表含 XMODIFIERS, 自动传入)。fcitx5 侧
   全程写日志 (可审计)。实测延迟 ~1ms (见 §8.8);
 - 输入法由 fcitx5 体系负责 (见上)。
 
-**待上游根治**: 黑窗的根因**不在 xwayland-satellite**(它是纯 buffer 转发, 没有
+**根因**: 黑窗的根因**不在 xwayland-satellite**(它是纯 buffer 转发, 没有
 像素路径), 也不在"应用没画出来" —— 是一个**设计上透明的 32 位 ARGB 顶层窗被当作
 不透明黑渲染**, 完整取证见 **§八 根因定位**。上游修复后 wework-fix 守护可退役。
 

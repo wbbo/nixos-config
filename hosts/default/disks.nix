@@ -49,10 +49,14 @@
                   # 直接 disko (不走 install.sh) 时同样有效。
                   swap.swapfile.size = "4G";
                 };
-                "@snapshots" = {
-                  # 挂载在 /persist/.snapshots: 快照存储独立于数据卷 (@persist 的子卷挂载点)
-                  # 快照子卷与数据卷互不拖累: @persist 损坏/误删时快照仍可恢复
-                  mountpoint = "/persist/.snapshots";
+                # 快照存储: @persist 的嵌套子卷 .snapshots (btrfs-assistant.nix 头注释):
+                # snapper 的非顶层布局需要它以 /persist/.snapshots 下 ".snapshots" 结尾命名,
+                # 嵌套布局可被 btrfs-assistant 自动推断 restore 目标, 无需手工映射。
+                # 必须声明 (而非依赖 snapper 兜底 mkdir): 否则落成普通目录,
+                # timeline 快照会递归拷贝整个 .snapshots 目录树。
+                # mountpoint = null: 不生成挂载 (父 @persist 挂载后自然可见)。
+                "@persist/.snapshots" = {
+                  mountpoint = null;
                   mountOptions = [ "noatime" ];
                 };
               };

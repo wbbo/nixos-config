@@ -28,6 +28,7 @@
     ./udisks.nix
     ./printing.nix
     ./proxy-lan.nix
+    ./btrfs-assistant.nix
     ./ssh-temp-password.nix
     ./home-manager.nix
   ];

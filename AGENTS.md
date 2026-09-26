@@ -1,10 +1,10 @@
 # AGENTS.md
 
-本文件是编码 agent 的工作区指令源 —— ZCode 直接读取 `AGENTS.md`;Claude Code 经软链 `CLAUDE.md -> AGENTS.md` 读取同一份内容,修改本文件即同时生效于两个工具。
+本文件是编码 agent 的工作区指令源。
 
 ## 概述
 
-这是基于 **NixOS 26.05 Flakes** 的个人单主机桌面配置。合成器 **[Niri](https://github.com/YaLTeR/niri)** (scrollable-tiling Wayland compositor) + **[Noctalia Shell](https://github.com/noctalia-dev/noctalia-shell)** (面板/通知/启动器/锁屏,替代 waybar+mako+swaybg)。文件系统 btrfs 五子卷,由 `install.sh` 手工分区管理。
+这是基于 **NixOS 26.05 Flakes** 的个人单主机桌面配置。合成器 **[Niri](https://github.com/YaLTeR/niri)** (scrollable-tiling Wayland compositor) + **[Noctalia Shell](https://github.com/noctalia-dev/noctalia-shell)** (面板/通知/启动器/锁屏,替代 waybar+mako+swaybg)。文件系统 btrfs 四子卷 (`@nix`/`@persist`/`@root`/`@swap`) + `@persist` 下嵌套子卷 `.snapshots` (snapper 快照存储, 以 `/.snapshots` 结尾命名以兼容 btrfs-assistant 的目标推断, 见 `modules/nixos/btrfs-assistant.nix` 头注释), 另常驻挂载 FS 顶层 `subvolid=5` 至 `/mnt/btrfs-root` (供快照工具枚举子卷树), 由 disko 声明式管理 (`install.sh` 调用执行)。
 
 ## 核心命令
 

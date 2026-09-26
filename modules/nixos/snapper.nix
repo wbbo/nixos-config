@@ -5,8 +5,9 @@
 # 回归 NixOS generation (GRUB 的 "NixOS - All configurations" 菜单, 零额外
 # 维护), 不再维护快照引导的自有链路 (reactivation 反噬/嵌套子卷等兼容面)。
 #
-# 快照存储: @persist 的快照落 @snapshots 子卷 (disks.nix, 挂载于
-# /persist/.snapshots, 与数据卷互不拖累: @persist 损坏/误删时快照仍可恢复)。
+# 快照存储: @persist 下嵌套子卷 .snapshots (路径 @persist/.snapshots; 2026-09-26
+# 由独立 @snapshots 子卷迁移而来, 迁移后布局为 btrfs-assistant 等工具的标准
+# 识别形态, 见 modules/nixos/btrfs-assistant.nix 头注释)。
 { config, lib, pkgs, ... }:
 {
   services.snapper.configs.persist = {
