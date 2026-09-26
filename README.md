@@ -192,7 +192,7 @@ cd ~/code/nixos-config
 | 升级依赖（noctalia/nixpkgs 等版本） | `nix flake update` → `./build.sh` |
 | 加了内存 / 换了硬件 | 直接 `./build.sh`（自动硬件适配） |
 | 改密码 / 换 GitHub token | 编辑 secrets（见下）→ `./build.sh` |
-| 清理旧系统版本 | `sudo nix-collect-garbage --delete-old` |
+| 清理旧系统版本 | `sudo nix-collect-garbage -d/--delete-old` |
 
 > ✅ 检查：`./build.sh` 结尾输出 `硬件适配文件已还原` 即成功（适配置是构建期临时状态，完成后自动还原，仓库保持干净）。
 > 不需要单独 `home-manager switch`（已集成）。
