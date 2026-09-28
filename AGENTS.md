@@ -396,3 +396,38 @@ profile) 各有一条 `force = true` 记录同一模式。区别在于 **`system
   原先 `restore_adapt` 是 switch 之后的显式调用, 而脚本是 `set -euo pipefail`,
   中间任何失败都会跳过还原, 把本机硬件值 (hostPlatform / swapfile / resume_offset)
   留在工作区, 一旦顺手 commit 就进了分发模板 (这次失败即实例)。
+
+2026-09-28 SPICE 控制台"鼠标点不动"的根因定位与修复 (源码级, 三层叠加) ——
+
+**现象**: virt-manager 的 SPICE 控制台里指针可见可移动, 但**点击完全无效**;
+键盘正常, guest 侧完全正常 (用 QEMU `input-send-event` 注入实测可点击、可开开始菜单)。
+
+**根因 (三层, 每层都有日志或源码证据)**:
+1. **spice-gtk 0.42 把 `GdkEventButton.state` 原样当按键掩码发给服务端**, 而
+   GDK-Wayland 按下事件的 state **不含刚按下的键** (SPICE_DEBUG 实测 `press: state 0x0`
+   与 `release: state 0x100`) → 服务端永远认为"没有键被按下"。
+2. **spice-gtk 客户端默认主动请求 client mouse mode** (`channel-main.c:267`
+   `requested_mouse_mode = SPICE_MOUSE_MODE_CLIENT`, 1692 行还会持续重试) ——
+   删掉 VM 的 USB tablet 也没用, 客户端一连上就把模式拉回 client。
+3. **spice-server 0.16 (`inputs-channel.cpp`) 在 client mode 下普通按键只有 vdagent
+   一条通路** (press 分支: 有 agent → `reds_handle_agent_mouse_event()`, 否则只调
+   tablet 的 `wheel()`, 普通按键直接丢弃); 而本机 guest 的 vdagent 注入进不了 Windows
+   (公司终端安全软件拦合成输入的嫌疑最大) → 按键全部丢失。
+   再叠加 Windows「键入时隐藏指针」: 收不到鼠标移动就一直不显示光标 —— 于是表现为
+   "看不到指针也点不动" (实测: 客户端侧光标一直停在 `set_cursor: flags 1, size 0`)。
+
+**修复** (`patches/spice-gtk-wayland-mouse.patch`, 5 处 hunk; overlay 见 libvirt.nix):
+按下 `| button_mask` / 抬起 `& ~button_mask` (**X11 下按位或幂等, 不影响 X11**) +
+客户端改请求 **server mode** (按键经 `sif->motion/buttons` 直接写入 QEMU 设备状态,
+彻底绕开 vdagent) + `try_mouse_ungrab` 无条件解开 Wayland 指针锁定、释放序列一律走
+释放路径 (修 `grab_broken` 被有意忽略 —— 见源码 bug 769635 注释 —— 导致的客户端/合成器
+状态不同步; 表现为 server mode 下指针卡在窗口里出不来) 。
+
+**配套**: win11 域移除 USB tablet (server mode 不需要, 也避免设备把模式拉回 client;
+配置备份 `~/win11-xml-backup-*.xml`); `~/vm-share` / virtiofs 共享目录废弃,
+guest ↔ 宿主机 传文件改走 SSH (guest → 宿主机 sshd `192.168.122.1:22`; 防火墙全局
+放行 22, 见 networking.nix)。
+
+**验证**: 修复后 virt-manager 点击与 `Ctrl+Alt` 释放指针均正常。
+(注: 同一套库在 remote-viewer 里 `Ctrl+Alt` 无效、`Shift+F12` 有效 —— 那是 virt-viewer
+应用层自己会吃掉 Ctrl/Alt, 与本次修复无关。)

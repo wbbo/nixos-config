@@ -1,0 +1,63 @@
+--- a/src/spice-widget.c
++++ b/src/spice-widget.c
+@@ -1316,6 +1316,13 @@
+     gint scale_factor;
+     GdkWindow *window;
+ 
++    /* Wayland: 无条件解开合成器侧的指针锁定与相对指针。grab_broken 被有意
++       忽略(见 grab_broken 注释, bug 769635)后客户端状态会与合成器不同步,
++       此时下面的提前 return 会让锁定永远留在合成器上 -> 指针卡死在窗口内,
++       Ctrl+Alt / Release Cursor 全部失效。 */
++    spice_wayland_extensions_disable_relative_pointer(GTK_WIDGET(display));
++    spice_wayland_extensions_unlock_pointer(GTK_WIDGET(display));
++
+     if (!d->mouse_grab_active)
+         return;
+ 
+@@ -1747,10 +1754,9 @@
+         g_signal_emit(widget, signals[SPICE_DISPLAY_GRAB_KEY_PRESSED], 0);
+ 
+         if (d->mouse_mode == SPICE_MOUSE_MODE_SERVER) {
+-            if (d->mouse_grab_active)
+-                try_mouse_ungrab(display);
+-            else
+-                try_mouse_grab(display);
++            /* 一律走释放路径: try_mouse_ungrab 已改为无条件解开 Wayland 锁定,
++               避免状态不同步时释放序列反而去重新抓取(指针永远回不去) */
++            try_mouse_ungrab(display);
+         }
+         d->seq_pressed = TRUE;
+     } else if (d->seq_pressed && check_for_grab_key_released(display, key->type, key->keyval)) {
+@@ -2269,7 +2275,8 @@
+     case GDK_BUTTON_PRESS:
+         spice_inputs_channel_button_press(d->inputs,
+                                           button_gdk_to_spice(button->button),
+-                                          button_mask_gdk_to_spice(button->state));
++                                          button_mask_gdk_to_spice(button->state) |
++                                          button_gdk_to_spice_mask(button->button));
+         /* Save the mouse button mask to couple it with Wayland movement */
+         d->mouse_button_mask = button_mask_gdk_to_spice(button->state);
+         d->mouse_button_mask |= button_gdk_to_spice_mask(button->button);
+@@ -2277,7 +2284,8 @@
+     case GDK_BUTTON_RELEASE:
+         spice_inputs_channel_button_release(d->inputs,
+                                             button_gdk_to_spice(button->button),
+-                                            button_mask_gdk_to_spice(button->state));
++                                            button_mask_gdk_to_spice(button->state) &
++                                            ~button_gdk_to_spice_mask(button->button));
+         /* Save the mouse button mask to couple it with Wayland movement */
+         d->mouse_button_mask = button_mask_gdk_to_spice(button->state);
+         d->mouse_button_mask ^= button_gdk_to_spice_mask(button->button);
+--- a/src/channel-main.c
++++ b/src/channel-main.c
+@@ -264,7 +264,9 @@
+     c->cancellable_volume_info = g_cancellable_new();
+ 
+     spice_main_channel_set_capabilties(SPICE_CHANNEL(channel));
+-    c->requested_mouse_mode = SPICE_MOUSE_MODE_CLIENT;
++    /* Wayland + 无可用 agent 注入时, client mode 的按键没有通路;
++       server mode 让按键直接由 QEMU 写入设备 (配合 button mask 修正) */
++    c->requested_mouse_mode = SPICE_MOUSE_MODE_SERVER;
+ }
+ 
+ static gint spice_main_get_max_clipboard(SpiceMainChannel *self)

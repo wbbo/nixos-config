@@ -3,6 +3,39 @@
 # GUI 为 GTK (virt-manager), Wayland 原生运行; CLI 用 virsh / virt-install。
 { pkgs, lib, ... }:
 {
+  # spice-gtk Wayland 鼠标补丁 (patches/spice-gtk-wayland-mouse.patch)
+  # ---------------------------------------------------------------------
+  # 症状: virt-manager / remote-viewer 的 SPICE 控制台里, 指针可见可移动,
+  #       但**点击完全无效**(键盘正常; guest 侧正常 —— QEMU 注入实测可点击)。
+  #
+  # 三层根因 (2026-09-28 定位, 每层都有日志/源码证据):
+  #   1. spice-gtk 0.42 把 `GdkEventButton.state` 直接当按键掩码发给服务端,
+  #      而 GDK-Wayland 按下事件的 state **不含刚按下的键**(实测 press=0x0 /
+  #      release=0x100) → 服务端收到的永远是"没有键按下"。
+  #      → 补丁①: 按下 `| button_mask`、抬起 `& ~button_mask`
+  #        (X11 下 state 本就含该键, 按位或幂等, 不影响 X11)
+  #   2. spice-gtk 客户端**默认主动请求 client mouse mode**(channel-main.c:267
+  #      `requested_mouse_mode = SPICE_MOUSE_MODE_CLIENT`, 1692 行还会持续重试)
+  #      → 即使删掉 VM 的 USB tablet, 客户端一连上就又把它拉回 client mode。
+  #   3. spice-server 0.16 (inputs-channel.cpp) 在 client mode 下**普通按键
+  #      只有 vdagent 一条通路**: press 分支有 agent → reds_handle_agent_mouse_event,
+  #      否则只调 tablet 的 wheel(), 普通按键直接丢弃。本机 guest 的 vdagent
+  #      注入进不了 Windows(公司终端安全软件拦合成输入的嫌疑最大) → 点击全丢。
+  #      → 补丁②: 改为请求 **server mode**; 该模式下按键经 `sif->motion/buttons`
+  #        直接写入 QEMU 设备状态, 完全绕开 vdagent; 且相对指针路径用的
+  #        `d->mouse_button_mask` 源码里本就维护正确(|= / ^=), 双重保险。
+  #
+  # 配套 VM 侧改动: win11 域的 USB tablet 已移除(server mode 不需要它, 也避免
+  # 设备把模式拉回 client), 配置备份在 ~/win11-xml-backup-*.xml。
+  # 副作用: server mode 下指针是相对模式(在窗口内被抓取, Ctrl+Alt 释放)。
+  nixpkgs.overlays = [
+    (final: prev: {
+      spice-gtk = prev.spice-gtk.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [ ../../patches/spice-gtk-wayland-mouse.patch ];
+      });
+    })
+  ];
+
   virtualisation.libvirtd = {
     enable = true;
     qemu = {
@@ -35,13 +68,11 @@
     ExecStop = [ "" "${pkgs.coreutils}/bin/true" ];
   };
 
-  # virtiofs 共享目录 —— libvirt 靠 vhost-user JSON 数据库发现 virtiofsd
-  # (读 /var/lib/qemu/vhost-user/*.json, 非 PATH 探测)。libvirtd 模块的
-  # vhostUserPackages 默认空, 该目录建出来就是空的 → start 报
-  # "Unable to find a satisfying virtiofsd"。把 virtiofsd 加进去 (其包内自带
-  # 50-virtiofsd.json), module 经 buildEnv symlink 到位 (win11 VM 的
-  # host 共享目录 ~/vm-share 走它)。
-  virtualisation.libvirtd.qemu.vhostUserPackages = [ pkgs.virtiofsd ];
+  # guest ↔ 宿主机 传文件走 SSH —— guest 内直接 ssh/scp 到宿主机 sshd
+  # (192.168.122.1:22; 防火墙全局放行 22, 见 networking.nix)。
+  # 不配置 virtiofs 共享目录: 需要 guest 侧额外安装 virtio-win 的 virtiofs
+  # 驱动 + WinFsp, 成本高于收益 (原 vhostUserPackages = [ virtiofsd ] 与
+  # ~/vm-share 目录已随之废弃)。
 
   programs.virt-manager.enable = true;
 }
