@@ -7,18 +7,13 @@
 # - TLS 为 rustls (ring), 无 OpenSSL 依赖;
 # - 字体要求 Nerd Font, 默认终端字体 Maple Mono NF CN 已满足。
 #
-# 源用 fork (wbbo/pigma), base = akirco/pigma main@21c380d (v0.2.14 后未发
-# tag 的 HEAD, 2026-09-13) + 4 个修复 commit (2026-09-25 固化, 原 postPatch
-# 补丁随之退役):
-#   4019405 删 .cargo/config.toml (强制 lld + x86-64-v3, Nix 沙箱无 lld 链接失败)
-#   8006710 折叠 Cargo.toml 跨行 inline table (TOML 1.0 非法, 新 cargo 拒解析)
-#   d2e8e21 debug 日志多字节 UTF-8 边界截断 panic (切"收藏的歌单"闪退)
-#   2447e4e y7dl submodule 指向 wbbo/y7dl@08c63e6 (同款 TOML 修复,
-#           .gitmodules 同步改; 曾拼错 gitlink 全量 SHA 致 fetchSubmodules
-#           "not our ref", amend 修正 —— 训: 短 SHA 必须实测补全, 不许手拼)
-#   eb83bde #88 修复升级: get().unwrap_or() 全文兜底改为 debug_truncate
-#           helper (最近字符边界截断, debug 日志体积有界)
-# 上游出新 tag 时可在 fork 上 rebase, 或把 owner 换回 akirco 并恢复 postPatch。
+# 源直接跟上游, v0.2.15 (2026-09-28) 起: 原 fork (wbbo/pigma, base
+# akirco/pigma main@21c380d + 4 修复 commit) 的全部修复均已进上游或不再需要:
+#   - UTF-8 边界截断 (#88) → 上游 PR #92 (132976b merge 28381e1)
+#   - Cargo.toml / y7dl submodule 跨行 inline table → 上游 release 已修,
+#     y7dl submodule 已指回 akirco/y7dl
+# 仅剩 .cargo/config.toml (强制 lld + x86-64-v3, Nix 沙箱无 lld 链接失败)
+# 需 postPatch 删除。
 # 注: 曾内置 pigma-mpris 桥 (轮询 status --json 发布 MPRIS 供 Noctalia
 # 媒体组件识别), 已移除恢复默认 —— pigma 无 MPRIS, Noctalia 媒体卡片不
 # 显示 pigma, 播放控制走 pigma 自带 TUI/CLI IPC。
@@ -26,23 +21,28 @@
 let
   pigma = pkgs.rustPlatform.buildRustPackage {
     pname = "pigma";
-    version = "0.2.14-unstable-2026-09-25";
+    version = "0.2.15";
 
     src = pkgs.fetchFromGitHub {
-      owner = "wbbo";
+      owner = "akirco";
       repo = "pigma";
-      rev = "eb83bde083a2515d2236eaab9517679be8192924";
+      rev = "v0.2.15";
       # FOD 输出路径由该 hash 决定: 喂旧 hash 时 store/缓存里同名 outPath 直接
       # 替换旧源码 (不重新拉取), 构建"看似正常"实为旧文件 —— 换 rev 必须同步
       # 换 hash (fakeHash 试错拿 got: 值); 2026-09-25 切 fork 实测踩坑
-      hash = "sha256-lX2Y5egavyKIcZmk2ARDnSjMEdCj3tQsBTgA+kbCNPY=";
+      hash = "sha256-/jlT6OKm3KCXY3DxQ30CXxClt5qMoc89Ce7hB4SNwks=";
       # crates/y7dl 是 git submodule (sonar 的路径依赖), GitHub tarball
       # 不含 submodule, 缺它则 cargo 解析 sonar 依赖时报 ENOENT
-      # (submodule 现指向 wbbo/y7dl@08c63e6, 见 .gitmodules)
+      # (上游指向 akirco/y7dl, v0.2.15 已含同款 TOML 修复)
       fetchSubmodules = true;
     };
 
-    cargoHash = "sha256-X4sRm1MJck58/OIGvQjAKmEI1ZqsAms9RK8DMS9+Yls=";
+    # 强制 lld + x86-64-v3 的上游配置, Nix 沙箱无 lld 链接失败 (见文件头)
+    postPatch = ''
+      rm .cargo/config.toml
+    '';
+
+    cargoHash = "sha256-v/pbPt9FTYctsNSw1AptLhZxanNmJF0AdajaPiCLrv4=";
 
     nativeBuildInputs = [ pkgs.pkg-config ];
     buildInputs = [ pkgs.alsa-lib ];
