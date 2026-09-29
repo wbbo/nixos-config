@@ -32,15 +32,13 @@ environment {
     TERMINAL "kitty"
     TERM "kitty"
     QT_QPA_PLATFORMTHEME "gtk3"
-    // 输入法: 方案 3 —— GTK/SDL legacy IM module 变量不设 (Wayland 原生
-    // text-input 生效, fcitx5.nix 有完整说明)。保留:
-    //   QT_IM_MODULES (Qt 6.8.2+ 官方写法, 本机 Qt 6.11.1)
-    //   XMODIFIERS (XWayland/wine 企业微信走 XIM, 必须)
-    QT_IM_MODULES "wayland;fcitx"
-    XMODIFIERS "@im=fcitx"
-    GLFW_IM_MODULE "ibus"
-    INPUT_METHOD "fcitx"
-    QT_QPA_PLATFORM "wayland;xcb"
+    // 输入法/平台变量 (QT_IM_MODULES / XMODIFIERS / GLFW_IM_MODULE /
+    // INPUT_METHOD / QT_QPA_PLATFORM) 不在此重复设置 —— 统一由
+    // home.sessionVariables 提供 (modules/home/programs/fcitx5.nix),
+    // 经 fish 的 hm-session-vars.fish → niri-session 的 login shell
+    // → niri 及其全部子进程继承 (2026-09-29 单一来源整理)。
+    // 取舍: 少一处重复, 但依赖 login shell 链 —— 若将来改会话启动方式
+    // (uwsm / systemd 托管会话等), 需重新评估这些变量的来源。
 }
 
 // ================ 光标 ================

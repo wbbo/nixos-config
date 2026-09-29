@@ -1,6 +1,21 @@
 # fish shell 用户配置
-# 二进制由系统级 programs.fish.enable 提供(/etc/shells、vendor 补全),
-# 此处只管理 ~/.config/fish/config.fish,避免重复安装。
+# 二进制与 /etc/fish vendor 补全由**系统级** programs.fish.enable 提供
+# (modules/nixos/packages.nix), 此处 programs.fish 只负责用户级:
+# ~/.config/fish/config.fish 与 functions/。
+#
+# 为什么启用 HM 的 fish 模块 (2026-09-29): home.sessionVariables 在 HM 里只
+# 打成一个包 (modules/home-environment.nix:656 home.sessionVariablesPackage →
+# etc/profile.d/hm-session-vars.sh), **自身没有任何激活逻辑**, 必须由某个 shell
+# 模块 (programs.bash/zsh/fish) 去 source 才有意义。此前 fish 是用
+# xdg.configFile 手挂 config.fish、绕过了 fish 模块, 于是 EDITOR/VISUAL/
+# XMODIFIERS/QT_IM_MODULES/JAVA_HOME/CARGO_HOME... 那批变量连文件都没被引用
+# (实测: 变量包内 12 条齐全, 但 fish conf.d 与各 profile 零 source), 是死配置。
+# 启用后 HM 生成的 config.fish 会**无条件** source hm-session-vars.fish
+# (位置在 status is-login / is-interactive 判断之前) —— 而 niri-session 正是以
+# `exec -l fish -c 'niri-session -l'` (非交互 login shell) 运行, 变量由此进入
+# niri 会话, 再经 niri-session 的 `systemctl --user import-environment` 带入
+# systemd user manager。这正是 niri 官方文档推荐的"要全局可见就放 login shell
+# 配置"路径 —— config.kdl 的 environment{} 块官方明确不传播到 systemd。
 { pkgs, ... }:
 let
   # top 专用 terminfo (topm): procps top 的表头反白写死 (Cap_reverse),
@@ -17,42 +32,50 @@ in {
   # 链接自定义 terminfo 到 ~/.terminfo, top alias 用 TERM=topm 生效
   home.file.".terminfo/t/topm".source = "${topm}/t/topm";
 
-  # force = true: 接管首启自动生成的 fish 默认 config.fish (同上, 防 HM 激活失败)
-  xdg.configFile."fish/config.fish" = {
-    force = true;
-    text = ''
-    # 取消欢迎语
-    set -g fish_greeting
+  programs.fish = {
+    enable = true;
 
-    # 默认编辑器
-    set -gx EDITOR nvim
-    set -gx VISUAL nvim
+    # shellInit = **无条件**执行块 (非交互/非 login 也跑)。PATH 必须放这里:
+    # niri-session 走的是非交互 login shell, 只有无条件块才保证 ~/.local/bin
+    # 进到 niri 及其所有子进程 (claude / cc-switch 等脚本装 CLI 靠它);
+    # EDITOR/VISUAL 不再单独设 —— 已由 home.sessionVariables 统一提供。
+    shellInit = ''
+      # 取消欢迎语
+      set -g fish_greeting
 
-    # ~/.local/bin: 原生安装脚本装的 CLI (claude / cc-switch 等)
-    fish_add_path ~/.local/bin
-    # rustup 的 cargo/rustc 经 rustup toolchain 装到 ~/.cargo/bin
-    fish_add_path ~/.cargo/bin
+      # ~/.local/bin: 原生安装脚本装的 CLI (claude / cc-switch 等)
+      fish_add_path ~/.local/bin
+      # rustup 的 cargo/rustc 经 rustup toolchain 装到 ~/.cargo/bin
+      fish_add_path ~/.cargo/bin
+    '';
 
-    # Starship prompt
-    starship init fish | source
+    # 交互式才需要: prompt 初始化
+    interactiveShellInit = ''
+      # Starship prompt
+      starship init fish | source
+    '';
 
-    # 别名
-    alias cat 'bat --paging=never'
-    alias ls 'eza --icons'
-    alias grep 'grep --color=auto'
-    alias ll 'eza -la --git --icons'
-    alias lt 'eza --tree --icons --level=2'
-    alias vim 'nvim'
-    alias :q 'exit'
-    alias cls 'clear'
-    # top: TERM=topm 关闭表头反白 (自定义 terminfo, rev 改为加粗) + 英文输出
-    alias top 'TERM=topm LANG=C command top'
-    alias claude 'claude --dangerously-skip-permissions'
-    alias cs 'cc-switch'
+    shellAliases = {
+      cat = "bat --paging=never";
+      ls = "eza --icons";
+      grep = "grep --color=auto";
+      ll = "eza -la --git --icons";
+      lt = "eza --tree --icons --level=2";
+      vim = "nvim";
+      ":q" = "exit";
+      cls = "clear";
+      top = "TERM=topm LANG=C command top";
+      claude = "claude --dangerously-skip-permissions";
+      cs = "cc-switch";
+    };
 
-    # niri 分辨率/缩放: 运行时修改 + 持久化
-    # (state 写入 ~/.local/state/niri-resolution|niri-scale, 下次启动由 niri-apply-resolution 应用)
-    function niri-res
+    # 独立函数文件 (~/.config/fish/functions/<名>.fish): fish 自动按需加载,
+    # 非交互调用同样可用 (原先是全塞在 config.fish 里无条件定义)
+    functions = {
+      niri-res = {
+        body = ''
+      # niri 分辨率/缩放: 运行时修改 + 持久化
+      # (state 写入 ~/.local/state/niri-resolution|niri-scale, 下次启动由 niri-apply-resolution 应用)
         set -q argv[1]; or begin
             echo "用法: niri-res <mode>         如 niri-res 1920x1080@60"
             echo "      niri-res scale <scale>  如 niri-res scale 1.25"
@@ -68,31 +91,35 @@ in {
         else
             niri msg output $output mode "$argv[1]"; and echo "$argv[1]" > ~/.local/state/niri-resolution
         end
-    end
-
-    # ── fzf 集成 (NyxNiri 移植) ──────────────────────────────
-    # Ctrl+R 历史搜索 / Alt+F 文件查找 / Alt+L Git Log / Alt+S Git Status
-    # (Alt+F/S 覆盖 fish 默认 forward-word/sudo, 与 NyxNiri 一致)
-    function _fzf_history
+        '';
+      };
+      _fzf_history = {
+        body = ''
+      # ── fzf 集成 (NyxNiri 移植) ──────────────────────────────
+      # Ctrl+R 历史搜索 / Alt+F 文件查找 / Alt+L Git Log / Alt+S Git Status
+      # (Alt+F/S 覆盖 fish 默认 forward-word/sudo, 与 NyxNiri 一致)
         # --print0 + split0: NUL 切出整条命令作为单参数原样回填, 含空格/引号的历史行不会被重新分词破坏
         set -l cmd (history | fzf --height 40% --reverse --query (commandline -b) --prompt "历史 > " --print0 | string split0 -m1)[1]
         test -n "$cmd"; and commandline -r -- $cmd
-    end
-
-    function _fzf_files
+        '';
+      };
+      _fzf_files = {
+        body = ''
         set -l sel (fd --type f --hidden --exclude .git 2>/dev/null | fzf --height 40% --preview 'bat --color=always {} 2>/dev/null || head -50 {}' --prompt "文件 > ")
         # string escape: 含空格/元字符的路径重解析回单 token, 不再被拆成多个词
         test -n "$sel"; and commandline -r -- (string escape -- "$sel")
-    end
-
-    function _fzf_git_log
+        '';
+      };
+      _fzf_git_log = {
+        body = ''
         set -l sel (git log --oneline --color=always 2>/dev/null | fzf --height 40% --preview 'git show --color=always {1} 2>/dev/null | head -80' --prompt "git log > ")
         test -n "$sel"; or return
         set -l hash (string split -m1 " " "$sel")[1]
         commandline -r -- "git show $hash"
-    end
-
-    function _fzf_git_status
+        '';
+      };
+      _fzf_git_status = {
+        body = ''
         # git status --short 行格式为 "XY path" (X=已暂存列, Y=未暂存列, ??=未跟踪)
         # 旧实现用 string split 取第 2 词, 最常见行 " M path" 会得到 "M path" 导致 git 报错
         set -l sel (git status --short 2>/dev/null | fzf --height 40% \
@@ -120,10 +147,11 @@ end | head -80' --prompt "git status > ")
             # 相对 HEAD 一条命令覆盖已暂存/未暂存/两者并存, 无需区分状态列
             commandline -r -- (string join " " "git diff HEAD --" (string escape -- "$f"))
         end
-    end
-
-    # se: nixpkgs 模糊搜索 + fzf 交互安装 (nix profile install)
-    function se
+        '';
+      };
+      se = {
+        body = ''
+      # se: nixpkgs 模糊搜索 + fzf 交互安装 (nix profile install)
         set -l query (string join ' ' $argv)
         if test -z "$query"
             echo "用法: se <关键字>"
@@ -143,14 +171,16 @@ end | head -80' --prompt "git status > ")
                 command nix profile install "nixpkgs#$attr[2]"
             end
         end
-    end
-
-    function fish_user_key_bindings
+        '';
+      };
+      fish_user_key_bindings = {
+        body = ''
         bind \cr _fzf_history
         bind \eF _fzf_files
         bind \eL _fzf_git_log
         bind \eS _fzf_git_status
-    end
-  '';
+        '';
+      };
+    };
   };
 }

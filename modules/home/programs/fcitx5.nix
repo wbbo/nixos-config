@@ -17,7 +17,21 @@ in
   # fcitx5 包放入系统包(由 Home Manager 管理)
   home.packages = [ fcitx5Pkgs ];
 
-  # 环境变量(所有 Wayland 应用生效, Niri 环境变量在 niri config.kdl 也有)
+  # 环境变量 —— 输入法/平台变量的**唯一来源** (niri config.kdl 的
+  # environment{} 块里已不再重复设置, 见 modules/home/niri/config.kdl 注释)。
+  #
+  # ⚠ 生效链路 (2026-09-29 补注 —— 这批变量曾经是死配置):
+  #   home.sessionVariables 在 HM 里只打成一个包 (home-environment.nix:656
+  #   home.sessionVariablesPackage), **自身没有任何激活逻辑**, 必须由某个
+  #   shell 模块 (programs.bash/zsh/fish) 去 source 才有意义 ⇒ 依赖
+  #   modules/home/programs/fish.nix 的 programs.fish.enable = true。
+  #   链路: HM 生成的 config.fish 无条件 source hm-session-vars.fish
+  #   → fish 作为 niri-session 的 login shell (exec -l fish -c ...) 启动时带入
+  #   → niri-session 的 `systemctl --user import-environment` 带进 systemd
+  #   → niri 及其全部子进程继承 (niri config.kdl 的 environment{} 块**不会**
+  #   进 systemd, 见 niri 官方文档)。
+  #   若关闭 programs.fish.enable, 这批变量会重新变成死配置 (无任何文件被 source)。
+  #
   # 方案 3 (2026-09-12, 方案 1 验证通过后): GTK/SDL 的 legacy IM module
   # 变量全部不设 —— Wayland 下应走原生 text-input 协议 (官方 Wiki:
   # "Do NOT set GTK_IM_MODULE" / KDE 段 "Do not set GTK_IM_MODULE &
