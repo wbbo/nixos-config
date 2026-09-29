@@ -1,15 +1,21 @@
 // 快捷键绑定 —— 参考 shorin-niri + youth 键位体系
+// repeat 规则 (niri 的 bind **默认按住即重复触发**, 官方文档原文 "holding down a
+// bind will make it trigger repeatedly"):
+//   - 状态切换型 (toggle-*) 与起进程型 (spawn / spawn-sh) 一律 repeat=false ——
+//     否则长按会来回闪 / 开出一串实例;
+//   - 连续调节型 (焦点与工作区移动、窗口宽高、音量亮度媒体键) 保留默认,
+//     长按连续生效是刚需。
 binds {
     // -------- 程序启动(shorin-niri 风格) --------
-    Mod+T              { spawn "kitty"; }
-    Mod+Return         { spawn "kitty"; }
-    Mod+Slash          { spawn "kitty" "--single-instance"; }
-    Mod+E              { spawn "nautilus"; }
-    Mod+B              { spawn "firefox"; }
+    Mod+T      repeat=false { spawn "kitty"; }
+    Mod+Return repeat=false { spawn "kitty"; }
+    Mod+Slash  repeat=false { spawn "kitty" "--single-instance"; }
+    Mod+E      repeat=false { spawn "nautilus"; }
+    Mod+B      repeat=false { spawn "firefox"; }
 
     // -------- 护眼 / Scratchpad (NyxNiri 移植) --------
-    Mod+Shift+N { spawn "eye-care"; }                      // 护眼模式 (暖色温 + 关模糊)
-    Mod+Grave   { spawn "niri-scratch-toggle" "kitty"; }   // Scratchpad 持久浮动终端
+    Mod+Shift+N repeat=false { spawn "eye-care"; }                      // 护眼模式 (暖色温 + 关模糊)
+    Mod+Grave   repeat=false { spawn "niri-scratch-toggle" "kitty"; }   // Scratchpad 持久浮动终端
 
     // -------- 窗口切换器 (niri 26.04 内置 recent-windows) --------
     // 用默认键位 Alt+Tab/Alt+Shift+Tab/Mod+Shift+Tab (Alt/Mod+grave = 同 app 窗口);
@@ -18,12 +24,12 @@ binds {
     // (曾用 noctalia msg window-switcher, 已统一到 niri 原生)
 
     // -------- Noctalia (v5 IPC: "noctalia msg <cmd>") --------
-    Mod+Space          { spawn-sh "noctalia msg panel-toggle launcher"; }
-    Mod+S              { spawn-sh "noctalia msg panel-toggle control-center"; }
-    Mod+Comma          { spawn-sh "noctalia msg settings-toggle"; }
+    Mod+Space    repeat=false { spawn-sh "noctalia msg panel-toggle launcher"; }
+    Mod+S        repeat=false { spawn-sh "noctalia msg panel-toggle control-center"; }
+    Mod+Comma    repeat=false { spawn-sh "noctalia msg settings-toggle"; }
     // 视频壁纸 picker (mpvpaper 插件面板; bar 无按钮, 快捷键唤出选视频/轮播/停止)
-    Mod+W              { spawn-sh "noctalia msg panel-toggle noctalia/mpvpaper:picker"; }
-    Mod+Shift+Slash    { show-hotkey-overlay; }
+    Mod+W        repeat=false { spawn-sh "noctalia msg panel-toggle noctalia/mpvpaper:picker"; }
+    Mod+Shift+Slash    repeat=false { show-hotkey-overlay; }
 
     // -------- 焦点移动(hjkl/方向键) --------
     Mod+H repeat=false { focus-column-left; }
@@ -72,8 +78,8 @@ binds {
     Mod+BracketRight repeat=false { consume-or-expel-window-right; }
     Mod+Shift+A      { consume-window-into-column; }
     Mod+Shift+D      { expel-window-from-column; }
-    Mod+X            { toggle-column-tabbed-display; }
-    Mod+V            { toggle-window-floating; }
+    Mod+X            repeat=false { toggle-column-tabbed-display; }
+    Mod+V            repeat=false { toggle-window-floating; }
     Mod+Shift+V repeat=false { switch-focus-between-floating-and-tiling; }
     Mod+N repeat=false { switch-focus-between-floating-and-tiling; }
 
@@ -183,9 +189,10 @@ binds {
     // -------- 系统 --------
     Mod+Q          { close-window; }
     Mod+Shift+E    { quit; }
-    Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
+    Mod+Escape allow-inhibiting=false repeat=false { toggle-keyboard-shortcuts-inhibit; }
 
     // -------- 会话管理 (noctalia session 面板: 锁定/注销/锁定并挂起/休眠/重启/关机) --------
-    Ctrl+Alt+Shift+L { spawn-sh "noctalia msg panel-toggle session"; }
-    Ctrl+Alt+L  { spawn-sh "noctalia msg session lock"; }   // 直接锁屏 (不经面板)
+    // (repeat=false 依据见文件头规则; 长按否则会疯狂开关面板)
+    Ctrl+Alt+Shift+L repeat=false { spawn-sh "noctalia msg panel-toggle session"; }
+    Ctrl+Alt+L       repeat=false { spawn-sh "noctalia msg session lock"; }   // 直接锁屏 (不经面板)
 }
