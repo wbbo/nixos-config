@@ -431,3 +431,45 @@ guest ↔ 宿主机 传文件改走 SSH (guest → 宿主机 sshd `192.168.122.1
 **验证**: 修复后 virt-manager 点击与 `Ctrl+Alt` 释放指针均正常。
 (注: 同一套库在 remote-viewer 里 `Ctrl+Alt` 无效、`Shift+F12` 有效 —— 那是 virt-viewer
 应用层自己会吃掉 Ctrl/Alt, 与本次修复无关。)
+
+2026-09-29 `home.sessionVariables` 死配置的根因与修复 (HM 机制级) ——
+
+**现象**: HM 侧设的一批会话变量 (EDITOR / VISUAL / XMODIFIERS / QT_IM_MODULES /
+GLFW_IM_MODULE / INPUT_METHOD / QT_QPA_PLATFORM / JAVA_HOME / CARGO_HOME /
+RUSTUP_HOME / LOCALE_ARCHIVE_2_27) **从未生效** —— 终端里 `echo $EDITOR` 是空的,
+systemd user env 里只有 `XMODIFIERS` (那还是系统级 `/etc/set-environment` 经
+`i18n.inputMethod` 给的, 与 HM 无关)。
+
+**根因**: HM 的 `home.sessionVariables` **只打成一个包**
+(`modules/home-environment.nix:656` → `home.sessionVariablesPackage`, 内容是
+`etc/profile.d/hm-session-vars.sh`), **自身没有任何激活逻辑** —— 必须由某个 shell
+模块 (`programs.bash` / `programs.zsh` / `programs.fish`) 去 source 才有意义
+(bash.nix:269 / fish.nix:406 各自的注入点)。而本机两处都不成立:
+fish 是用 `xdg.configFile."fish/config.fish"` 手挂的 (绕过 fish 模块),
+bash/zsh 模块则根本没启用 ⇒ **没有任何消费者**: 变量包生成后无人引用, 甚至
+没被任何 derivation 依赖 (实测 `~/.hm-session-vars.sh` 不存在、fish conf.d 无
+`hm-session-vars.fish`、`environment.d` 里只有 LOCALE_ARCHIVE)。
+
+**修复** (`modules/home/programs/fish.nix`): 改 `programs.fish.enable = true`,
+配置迁到 `shellInit` / `interactiveShellInit` / `shellAliases` / `functions`
+(7 个函数拆成独立文件; `fish_add_path` 必须在**无条件**的 shellInit 里, 因为
+niri-session 是非交互 login shell)。HM 生成的 config.fish 会**无条件** source
+`hm-session-vars.fish` (位置在 `status is-login` / `is-interactive` 判断之前)。
+链路: fish ← niri-session 的 `exec -l fish -c 'niri-session -l'` → 变量进入
+niri-session → `systemctl --user import-environment` 进 systemd → niri 及全部
+子进程继承。这正是 niri 官方文档"要全局可见就放 login shell 配置"的路径 ——
+反之 config.kdl 的 `environment{}` 块官方明确**不传播到 systemd** (fcitx5 服务
+等 systemd 单元拿不到, 必须自带 `Service.Environment`, 见 fcitx5.nix:243)。
+
+**配套**: niri config.kdl 的 `environment{}` 移除那 5 个输入法/平台变量 (改由 HM
+单一来源提供, 消除双写); fcitx5.nix 注释写明生效链路 + "关闭 programs.fish.enable
+会让这批变量重新变成死配置"的警告。
+
+**验证**: systemd user env 从 1 条 → 7 条; `/proc/$(pgrep -x niri)/environ`
+(它是进程**启动时**的环境, niri 自己 `setenv` 的内容不会出现在此) 里出现
+`QT_IM_MODULES` ⇒ 证明变量确经 login shell 继承而来。
+
+**可复用排查手法** (怀疑"变量设了没生效"时): ① `nix eval` 该选项是否真有值 →
+② 读 HM/nixpkgs 源码找它的**落地机制** (打到哪个文件、由谁消费) → ③ 检查落地产物
+是否存在、被谁引用 → ④ 直接读目标进程 `/proc/<pid>/environ` 定位。四步即可证伪,
+不必猜。
