@@ -473,3 +473,30 @@ niri-session → `systemctl --user import-environment` 进 systemd → niri 及�
 ② 读 HM/nixpkgs 源码找它的**落地机制** (打到哪个文件、由谁消费) → ③ 检查落地产物
 是否存在、被谁引用 → ④ 直接读目标进程 `/proc/<pid>/environ` 定位。四步即可证伪,
 不必猜。
+
+2026-09-30 Ctrl+R (fzf 历史搜索) 选中后命令前两字符重复的根因与修复 (pty 字节级复现) ——
+
+**现象**: Ctrl+R 选中历史命令上屏后, 命令前两个字符重复显示 (`echo x` → `ececho x`),
+但执行结果与新写入的 fish_history 完全正常 (**纯渲染问题, 缓冲区未被污染**);
+fzf 里空选取消 (无匹配直接 Enter) 时, 命令行整行消失。
+
+**根因**: fish 重绘引擎与 `fzf --height` 对"光标在哪"的认知错位, 两层叠加:
+1. fzf 退出时以 `\r` + `[A` + `[J` 擦除自己占用的行, 硬件光标停在 (命令行行, 0 列);
+   而 fish 记住的光标位置是命令行文本起点 (prompt `❯ ` 之后, 2 列) —— 错位 2 列。
+2. fish 的重绘是**增量**的: 只重画"相对自己屏幕模型有变化"的区域, 且首段用相对
+   移动定位 → 实际落点左移 2 列, 前 2 字符盖到 prompt 上; 后续重绘段用 `\r`+`[N C`
+   等绝对定位自纠, 又把整段文本写回正确位置 → 首 2 字符在开头"残留"一份。
+   缓冲未变时 (fzf 取消) fish 判定无需重绘, 被 fzf 擦除的整行保持空白。
+   (上游 fish-shell#10800 为同类问题, 标记 fish 4.0 已修; 本机 fish 4.7.1 变体仍在,
+   触发条件含 `--height` + 两行 starship prompt; 空白行照样触发, 与预输入无关)
+
+**修复**: 四个 fzf 绑定函数 (`_fzf_history` / `_fzf_files` / `_fzf_git_log` /
+`_fzf_git_status`, `modules/home/programs/fish.nix`) 末尾**无条件**加
+`commandline -f repaint` (fzf-git.sh#105 同款方案; 实测 `repaint` 即触发全量重绘,
+无需 `force-repaint`)。放在函数末尾而非 `commandline -r` 之后, 使"空选/取消"路径
+同样恢复整行。**不可删除此行** —— 它是对 fzf 退出副作用的唯一补偿。
+
+**验证**: 自建 pty 驱动 + 最小 VT 模拟器 (一次性工具 `/tmp/fzf-repro.py`, 未入库;
+自动回应 DSR 光标查询) 真实运行 fish+fzf, 逐指令追踪屏幕写入: 修复前空白行/预输入/
+无匹配三场景分别复现"前 2 字符重复"与"整行消失", 修复后全部正确; 修复前后
+fish_history 与执行结果均干净 —— 再次确认问题只在渲染层。

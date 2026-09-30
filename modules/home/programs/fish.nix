@@ -101,21 +101,34 @@ in {
         # --print0 + split0: NUL 切出整条命令作为单参数原样回填, 含空格/引号的历史行不会被重新分词破坏
         set -l cmd (history | fzf --height 40% --reverse --query (commandline -b) --prompt "历史 > " --print0 | string split0 -m1)[1]
         test -n "$cmd"; and commandline -r -- $cmd
+        # 必须强制重绘 (2026-09-30 修复, 四个 fzf 组件同): fzf --height 退出时
+        # 擦掉自己占用的行, 硬件光标停在 (命令行行, 0 列); 而 fish 的重绘基于
+        # 自己记住的光标位置 (命令行文本起点) 做相对移动 → 首段重绘整体左移
+        # prompt 宽度 (2 列), 前两个字符盖到 prompt 上, 随后绝对定位的第二遍
+        # 重绘又写回原位 → 前两个字符重复显示 (如 "echo x" 变 "ececho x");
+        # 未选中任何项时 fish 认为缓冲未变、跳过重绘, 被擦除的整行直接消失。
+        # repaint 让 fish 重新输出完整 prompt+命令行, 与终端真实状态对齐。
+        commandline -f repaint
         '';
       };
       _fzf_files = {
         body = ''
         set -l sel (fd --type f --hidden --exclude .git 2>/dev/null | fzf --height 40% --preview 'bat --color=always {} 2>/dev/null || head -50 {}' --prompt "文件 > ")
         # string escape: 含空格/元字符的路径重解析回单 token, 不再被拆成多个词
-        test -n "$sel"; and commandline -r -- (string escape -- "$sel")
+        if test -n "$sel"
+            commandline -r -- (string escape -- "$sel")
+        end
+        commandline -f repaint # 同 _fzf_history: fzf --height 退出后必须强制重绘
         '';
       };
       _fzf_git_log = {
         body = ''
         set -l sel (git log --oneline --color=always 2>/dev/null | fzf --height 40% --preview 'git show --color=always {1} 2>/dev/null | head -80' --prompt "git log > ")
-        test -n "$sel"; or return
-        set -l hash (string split -m1 " " "$sel")[1]
-        commandline -r -- "git show $hash"
+        if test -n "$sel"
+            set -l hash (string split -m1 " " "$sel")[1]
+            commandline -r -- "git show $hash"
+        end
+        commandline -f repaint # 同 _fzf_history: fzf --height 退出后必须强制重绘
         '';
       };
       _fzf_git_status = {
@@ -132,21 +145,23 @@ if string match -q "??" -- (string sub -l 2 -- {})
 else
     git diff HEAD --color=always -- "$f" 2>/dev/null
 end | head -80' --prompt "git status > ")
-        test -n "$sel"; or return
-        # 跳过 "XY " 前缀取路径 (rename 行 "R  old -> new" 取旧路径, HEAD 中可 diff);
-        # git 对含空格/特殊字符的路径输出 C 引用 (双引号包裹 + 反斜杠转义), 剥引号再反转义
-        set -l f (string sub -s 4 -- "$sel" | string split -m1 " -> ")[1]
-        if string match -q '"*"' -- "$f"
-            # 注意: if 块内 set -l 是块级作用域, 用无 -l 的 set 修改外层变量
-            set f (string unescape -- (string sub -s 2 -e -1 -- "$f"))
+        if test -n "$sel"
+            # 跳过 "XY " 前缀取路径 (rename 行 "R  old -> new" 取旧路径, HEAD 中可 diff);
+            # git 对含空格/特殊字符的路径输出 C 引用 (双引号包裹 + 反斜杠转义), 剥引号再反转义
+            set -l f (string sub -s 4 -- "$sel" | string split -m1 " -> ")[1]
+            if string match -q '"*"' -- "$f"
+                # 注意: if 块内 set -l 是块级作用域, 用无 -l 的 set 修改外层变量
+                set f (string unescape -- (string sub -s 2 -e -1 -- "$f"))
+            end
+            if string match -q "??" -- (string sub -l 2 -- "$sel")
+                # 未跟踪文件: no-index 对 /dev/null 展示新增的全部内容
+                commandline -r -- (string join " " "git diff --no-index /dev/null --" (string escape -- "$f"))
+            else
+                # 相对 HEAD 一条命令覆盖已暂存/未暂存/两者并存, 无需区分状态列
+                commandline -r -- (string join " " "git diff HEAD --" (string escape -- "$f"))
+            end
         end
-        if string match -q "??" -- (string sub -l 2 -- "$sel")
-            # 未跟踪文件: no-index 对 /dev/null 展示新增的全部内容
-            commandline -r -- (string join " " "git diff --no-index /dev/null --" (string escape -- "$f"))
-        else
-            # 相对 HEAD 一条命令覆盖已暂存/未暂存/两者并存, 无需区分状态列
-            commandline -r -- (string join " " "git diff HEAD --" (string escape -- "$f"))
-        end
+        commandline -f repaint # 同 _fzf_history: fzf --height 退出后必须强制重绘
         '';
       };
       se = {
