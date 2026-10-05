@@ -6,7 +6,11 @@
 {
   home.packages = with pkgs; [
     nodejs
-    pnpm_10  # pnpm 11 与 nodejs-slim 24 有 nixpkgs 输出 bug, 用 10
+    # pnpm 10 系列安全修复版 (10.34.5)。更新 nixpkgs 后, 旧固定版 10.34.0
+    # (pnpm_10) 被标记 insecure (9 个 CVE, 仅供 out-of-tree 兼容), 求值报错。
+    # 仍用 10 系列而非默认 pnpm (11): 与 nodejs-slim 24 有 nixpkgs 输出 bug。
+    # 注: 10.34.1 起收紧远程 tarball 完整性校验, 个别旧 lockfile 需重锁。
+    pnpm_10_latest
   ];
 
   systemd.user.services.nvm-install = {
