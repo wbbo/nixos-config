@@ -500,3 +500,51 @@ fzf 里空选取消 (无匹配直接 Enter) 时, 命令行整行消失。
 自动回应 DSR 光标查询) 真实运行 fish+fzf, 逐指令追踪屏幕写入: 修复前空白行/预输入/
 无匹配三场景分别复现"前 2 字符重复"与"整行消失", 修复后全部正确; 修复前后
 fish_history 与执行结果均干净 —— 再次确认问题只在渲染层。
+
+2026-10-10 VSCode Remote-SSH 报 `EROFS: read-only file system, open '~/.ssh/config'` 的根因与修复 ——
+
+**现象**: VSCode 用 Remote-SSH 连接其他设备时弹窗: 命令 "Remote-SSH: 连接到主机..."
+导致错误 / 发生了系统错误 (EROFS: read-only file system, open '/home/wbb/.ssh/config')。
+
+**根因**: Remote-SSH 在"连接到主机/添加主机"流程会 open(O_WRONLY) 追写
+`~/.ssh/config` 的 Host 段, 而 HM 的 `programs.ssh` 把 `~/.ssh/config` **软链到
+只读 nix store** (`/nix/store/...-home-manager-files/.ssh/config`) —— 任何写入必
+EROFS。只读软链是 HM 的通用行为, 只在「应用需要写配置」时暴露。
+
+**修复** (`modules/home/programs/ssh.nix`, 切到该代际后生效):
+1. `home.file.".ssh/config".target = ".ssh/config.hm"` —— HM 生成物重定向落
+   `~/.ssh/config.hm` (store 只读软链), 让 `~/.ssh/config` 本体不被 HM 占用;
+2. 激活钩子 `ssh-config-mutable` (`entryAfter [ "linkGeneration" ]`): **seed +
+   自愈** —— 文件缺失 / 仍是旧软链 / Include 行丢失时重建 (单行 Include 版),
+   其余时间不碰文件。
+
+**语义 (初版"无条件刷新"同日推进为「混合模式」)**: 初版钩子是每次激活
+`install -m 600` 无条件覆盖 (权威源含运行时写的全部内容 —— 同 id_ed25519 的
+权威源哲学), 但「远程主机随时变化」的真实场景下, 每加一台设备都要改 ssh.nix +
+rebuild 太硬。改为分层:
+- **`~/.ssh/config` (可写实体主文件, 运行时区)**: 首行
+  `Include /home/<user>/.ssh/config.hm`, 其余是运行时增删的 Host (VSCode
+  "Add New SSH Host" / 手动追加) —— **跨 rebuild/重启持久保留**;
+- **`~/.ssh/config.hm` (只读声明式片段)**: settings 渲染 (含 `"*"` 默认段),
+  改 ssh.nix → rebuild 即生效 —— 声明式与运行时两部分互不打架;
+- 纯临时设备还可零配置直连 (`ssh user@ip`, 不经 config), 三档按设备流动程度分层。
+- 附实测: OpenSSH 10.5 对 `Include` 的相对路径 (解析到 `~/.ssh`) 与 `~` 形式
+  都可解析; 最终取 eval 期展开的**绝对路径** (分发模板自动适配接收者家目录,
+  解析零歧义)。first-match 语义: Include 展开在前、运行时追加在后 ——
+  HostName/User/Port 等普通参数不受影响; 运行时块**无法覆盖** `"*"` 段已有
+  参数 (如 Compression), 要覆盖须写进 settings。
+
+**排查要点 (可复用)**:
+- HM 激活项名字与顺序有据可查 (home-manager `modules/files.nix`):
+  checkLinkTargets → writeBoundary → linkGeneration → 各钩子。需要「排在 HM 链接
+  之后」的钩子用 `lib.hm.dag.entryAfter [ "linkGeneration" ]`; eval 后可从
+  `home-manager-generation/activate` 里 grep `_iNote "Activating"` 验证实际顺序。
+  旧代际曾管的路径在新代际缺席时, linkGeneration 的 cleanup 只删「软链进 store」
+  的那种, 实体文件会跳过并告警 —— 无 clobber 风险。
+- `home.file.<name>.target` 是官方选项 (`modules/lib/file-type.nix`, 默认 = attr 名),
+  用它把「HM 生成物」与「用户侧可写文件」解耦 —— 避免在 `~/.ssh/config` 上引入
+  `force = true` 硬覆盖 + 实体文件冲突检查的长期博弈。
+- **免 root 端到端验证 HM 改动的技巧**: `nix build --impure --expr '...users.wbb.home.activationPackage'`
+  可在普通用户下构建 HM 代际, 并直接执行其中的 `activate` (即
+  home-manager-\<user\>.service 的运行内容) —— HM 侧改动无需等待 sudo 切换即可
+  验证与生效 (系统代际切换后由 Home-Manager 服务再跑一遍, 幂等)。
