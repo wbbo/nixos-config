@@ -548,3 +548,62 @@ rebuild 太硬。改为分层:
   可在普通用户下构建 HM 代际, 并直接执行其中的 `activate` (即
   home-manager-\<user\>.service 的运行内容) —— HM 侧改动无需等待 sudo 切换即可
   验证与生效 (系统代际切换后由 Home-Manager 服务再跑一遍, 幂等)。
+
+2026-10-13 tuigreet 状态栏精简 + 「greetd 单元环境到不了 greeter」的机制级定位 ——
+
+**动机**: tuigreet 状态栏常驻 `F2 Change command` / `F3 Choose session` /
+`SESS Niri`。单会话主机上三者信息坍缩为同一事实 ("登录就是 Niri"): F3 列表
+光标反色高亮且启动时由 remember-session 从 `/var/cache/tuigreet/lastsession-path`
+同步到当前会话 (tuigreet greeter.rs:397), `SESS` 读数与它是同一份状态; F2 手输
+命令入口则完全用不上。判定为冗余显示, 决定隐藏 F2 与 SESS。
+
+**状态栏构成** (tuigreet 0.11.1 `ui/mod.rs:225-287`, 全部默认显示):
+`ESC Reset` / `F2 Change command` (kb_command=2) / `F3 Choose session`
+(kb_sessions=3) / `F12 Power` / `F4 Background` / `SESS|CMD <当前会话或命令>`
+(Desktop 来源前缀 SESS + desktop `Name=`, 手输命令来源前缀 CMD) / 右侧
+`CAPS LOCK` (仅开启时)。**隐藏提示不禁用按键** —— keyboard.rs 仅按键号分发,
+与可见性无关。
+
+**第一次尝试失败 —— `systemd.services.greetd.environment` 注入无效**:
+设 `TUIGREET_STATUS_SHOW_*=0` 后实测 greeter 进程 environ 里没有这些变量,
+`LANG` 也是 `en_US.UTF-8` 而非单元里设的 `zh_CN.UTF-8`。
+**根因 (greetd `src/session/worker.rs`)**: greetd 拉起 greeter 子进程时的环境
+只取 **PAM envlist** (`pam.getenvlist()` 后直接 execve), **不继承 daemon 自身
+进程环境** —— 单元 `Environment=` 只装饰 greetd 自己。greeter 的 LANG 由
+`/etc/pam/environment` 的 `LANG DEFAULT="en_US.UTF-8"` 定死 (源自
+`i18n.defaultLocale`; locale.nix 的 `LC_*` 五项 extraLocaleSettings 倒是同经
+pam_env 生效, 故 greeter 里 LC_TIME 等是 zh_CN)。这同时解释了 tuigreet 界面
+恒英文 —— 且其内嵌 11 种语言 (ca/de/en/es/fr/it/pl/pt/ru/tr/uk) 根本没有
+zh, 想要中文只能上游翻译或换图形 greeter。
+**由此**: greetd.nix 里 `systemd.services.greetd.environment.LANG` 从未到过
+tuigreet (2026-09-16 注释只发现它影响不到用户会话, 这次确认连 greeter 都影响
+不到), 仅为 greetd 自身进程一致性保留。
+
+**修复 (正道: tuigreet 0.11 配置文件)** —— `greetd.nix`:
+```nix
+environment.etc."tuigreet/config.toml".text = ''
+  [layout.widgets.status_bar]
+  show_command = false
+  show_session_status = false
+'';
+```
+配置加载优先级: defaults → `/etc/tuigreet/config.toml` →
+`~/.config/tuigreet/config.toml` → `TUIGREET_*` 环境变量 → CLI 参数
+(`tuigreet-config/src/parser.rs:36`)。可用开关共 7 个: show_reset /
+show_command / show_session / show_power / show_background /
+show_session_status / show_caps_lock; `status_position = "hidden"` 整条隐藏。
+**注意热重载只在「进程启动时配置文件已存在」才启用** (`watcher.rs:83`),
+启动后才出现的文件对运行中的 greeter 不可见, 需 respawn。
+
+**验证**: ① `nix eval` etc 内容 ✓; ② 用 tuigreet 自带 `--config` 旗标喂真实
+解析器: 正确配置通过 schema 校验 (走到预期的 `GREETD_SOCK must be defined`),
+篡改 `show_command = "bogus"` 报 `invalid type` 且精确指向键名 —— 证明键真被
+读取而非静默忽略 ✓; ③ restart greetd 换新 greeter 后目测状态栏无 F2/SESS ✓。
+
+**附带发现**:
+- **`systemctl restart greetd` 不会杀用户会话** —— 用户 niri 在 logind 独立
+  session scope (不在 greetd cgroup), journal 实证 restart 只 SIGKILL 了
+  greetd daemon 与 unix_chkpwd, 会话毫发无损。此前"restart 会踢掉会话"的
+  判断是错的。
+- **greetd.nix 过时注释修正**: "F2 可切换会话" → 实际 F2=手输命令、
+  F3=会话列表 (greeter.rs:219-220 默认键位, 与屏上所见一致)。

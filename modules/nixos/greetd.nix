@@ -13,8 +13,9 @@
     enable = true;
     settings = {
       default_session = {
-        # --sessions 扫描 wayland-sessions (.desktop), 界面显示会话名 "niri"
-        # 而非 --cmd 模式下裸露的 store 路径; F2 可切换会话
+        # --sessions 扫描 wayland-sessions (.desktop), 会话名显示 desktop 的
+        # Name= ("Niri") 而非 --cmd 模式下裸露的 store 路径; F3 打开会话列表
+        # (F2 是手输命令入口, 已从状态栏隐藏, 见下方环境变量)
         # --remember: 记住上次成功登录的用户名; --remember-session: 记住会话
         # --time/--asterisks: 时钟显示 + 密码星号回显
         command = "${pkgs.tuigreet}/bin/tuigreet --time --asterisks --remember --remember-session --sessions ${pkgs.niri}/share/wayland-sessions";
@@ -46,7 +47,34 @@
   #
   # 与 niri config.kdl 的 environment{} 块同值 —— 那边只覆盖 niri 自己 spawn
   # 的子进程, 是另一条路径上的双保险 (这条是有效的)。
+  #
+  # ⚠ 2026-10-13 实测: 这份环境**也到不了 tuigreet (greeter 子进程)** ——
+  # greetd 拉起 greeter 时的环境只取 PAM envlist (greetd src/session/worker.rs:
+  # `pam.getenvlist()` 后直接 execve, **不继承 daemon 自身进程环境**), 再被
+  # /etc/pam/environment 的 `LANG DEFAULT="en_US.UTF-8"` 定为英文 → tuigreet
+  # 实测 LANG=en_US.UTF-8, 界面恒英文。要给 tuigreet 传配置走下方
+  # /etc/tuigreet/config.toml。
   systemd.services.greetd.environment.LANG = "zh_CN.UTF-8";
+
+  # ── tuigreet 状态栏精简 (tuigreet 0.11 配置文件) ──────────────────
+  # 配置加载优先级: defaults → /etc/tuigreet/config.toml (本文件) →
+  # ~/.config/tuigreet/config.toml → TUIGREET_* 环境变量 → CLI 参数
+  # (tuigreet-config/src/parser.rs:36 load_config)。
+  # 只藏提示文字, 按键仍有效 (tuigreet keyboard.rs 仅按键号分发, 与可见性无关):
+  #   show_command        藏 "F2 Change command" —— 手输命令入口, 单会话主机
+  #                       用不上;
+  #   show_session_status 藏 "SESS Niri" —— 当前会话读数与 F3 列表信息重复:
+  #                       列表光标反色高亮且初始即停在当前会话 (remember-session
+  #                       启动时由 lastsession-path 同步, tuigreet greeter.rs:397),
+  #                       本机会话列表仅此一项。
+  # 可用开关共 7 个: show_reset / show_command / show_session / show_power /
+  # show_background / show_session_status / show_caps_lock;
+  # status_position = "hidden" 可整条隐藏 (tuigreet-config/src/schema.rs)。
+  environment.etc."tuigreet/config.toml".text = ''
+    [layout.widgets.status_bar]
+    show_command = false
+    show_session_status = false
+  '';
 
   # 防 greetd 快速重启触发 systemd rate-limit 导致隔次黑屏。
   # StartLimit* 必须在 unit 级: [Service] 段不识别 (journal 实证报
