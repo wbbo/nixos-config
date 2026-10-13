@@ -84,6 +84,27 @@
     show_session_status = false
   '';
 
+  # ── tuigreet 按键一览 (0.11.1 源码逐分支核对; 提示已全部隐藏, 此处为唯一参考) ──
+  # 主登录屏:
+  #   字符 / Backspace / Delete   编辑输入框
+  #   ← →                         输入框内光标左右移动
+  #   ^A / ^E                     光标跳到行首 / 行尾
+  #   ^U                          清空当前输入框
+  #   Tab                         仅用户名框: 等同 Enter (校验并跳到密码)
+  #   Enter                       提交: 用户名 → 密码 → 登录
+  #   Esc                         取消进行中的认证 + 重置表单 (保留用户名)
+  #   F2                          手输启动命令 (绕过 .desktop)
+  #   F3                          会话列表 (本机仅 Niri 一项, 反色高亮即当前)
+  #   F4                          背景动画选择
+  #   F12                         电源菜单 (关机 / 重启)
+  # 弹窗 / 菜单内 (F2/F3/F4/F12 打开后):
+  #   ↑ ↓                         上下移动选择
+  #   Enter                       确认
+  #   Esc                         返回上一界面 (F2 编辑器里还会还原原命令)
+  # 说明: F1 未绑定; 键位可经 [keybindings] (command/sessions/power/background
+  # 填 1-12, 即换 F 键号) 重映射 —— 本机用默认。隐藏的只是提示文字, 上表按键
+  # 全部照常可用 (keyboard.rs 仅按键号分发)。详细定位见 AGENTS.md 2026-10-13。
+
   # 防 greetd 快速重启触发 systemd rate-limit 导致隔次黑屏。
   # StartLimit* 必须在 unit 级: [Service] 段不识别 (journal 实证报
   # "Unknown key ... in section [Service], ignoring"), 放 serviceConfig 从未生效。
