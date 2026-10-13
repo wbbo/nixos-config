@@ -60,19 +60,27 @@
   # 配置加载优先级: defaults → /etc/tuigreet/config.toml (本文件) →
   # ~/.config/tuigreet/config.toml → TUIGREET_* 环境变量 → CLI 参数
   # (tuigreet-config/src/parser.rs:36 load_config)。
-  # 只藏提示文字, 按键仍有效 (tuigreet keyboard.rs 仅按键号分发, 与可见性无关):
-  #   show_command        藏 "F2 Change command" —— 手输命令入口, 单会话主机
-  #                       用不上;
-  #   show_session_status 藏 "SESS Niri" —— 当前会话读数与 F3 列表信息重复:
-  #                       列表光标反色高亮且初始即停在当前会话 (remember-session
-  #                       启动时由 lastsession-path 同步, tuigreet greeter.rs:397),
-  #                       本机会话列表仅此一项。
-  # 可用开关共 7 个: show_reset / show_command / show_session / show_power /
+  # 提示全部隐藏 (只藏文字, 按键仍有效 —— tuigreet keyboard.rs 仅按键号分发,
+  # 与可见性无关): F2 手输命令单会话主机用不上; F3 会话列表本机仅 Niri 一项;
+  # F12/F4 不常用; "SESS Niri" 与 F3 列表信息重复 (列表光标反色高亮且初始即
+  # 停在当前会话 —— remember-session 启动时由 lastsession-path 同步,
+  # tuigreet greeter.rs:397)。
+  # tuigreet 0.11.1 **无"按键切换状态栏显示"功能** (按键分支/CLI/配置三处均无
+  # status 开关, 已全量核对), 故只能常隐; 提示全部隐去 (含 ESC Reset), 仅保留
+  # 右侧 CAPS LOCK 功能指示 (仅大写锁定时显示)。
+  # 7 个开关: show_reset / show_command / show_session / show_power /
   # show_background / show_session_status / show_caps_lock;
   # status_position = "hidden" 可整条隐藏 (tuigreet-config/src/schema.rs)。
+  # 配置支持热重载 (watcher 仅在进程启动时文件已存在才启用, watcher.rs:83;
+  # 本机满足) —— **已实测**: 改开关 rebuild 后运行中的 greeter (pid 未变,
+  # 未重启 greetd) 状态栏即时刷新。
   environment.etc."tuigreet/config.toml".text = ''
     [layout.widgets.status_bar]
+    show_reset = false
     show_command = false
+    show_session = false
+    show_power = false
+    show_background = false
     show_session_status = false
   '';
 

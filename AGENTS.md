@@ -555,7 +555,14 @@ rebuild 太硬。改为分层:
 `SESS Niri`。单会话主机上三者信息坍缩为同一事实 ("登录就是 Niri"): F3 列表
 光标反色高亮且启动时由 remember-session 从 `/var/cache/tuigreet/lastsession-path`
 同步到当前会话 (tuigreet greeter.rs:397), `SESS` 读数与它是同一份状态; F2 手输
-命令入口则完全用不上。判定为冗余显示, 决定隐藏 F2 与 SESS。
+命令入口则完全用不上。判定为冗余显示。最终按用户要求把**左侧 6 项提示全部隐去**
+(含 ESC Reset), 状态栏仅剩右侧 CAPS LOCK 功能指示 (仅大写锁定时显示)。
+
+**tuigreet 0.11.1 没有"按键切换状态栏显示"功能** (全量核对: 按键分支只有
+Esc/←→/↑↓/Tab/Enter/字符/Backspace/Delete/^A/^E/^U/F2/F3/F4/F12, 无 status
+相关分支; CLI 无旗标; `[keybindings]` 仅重映射 4 个菜单键, schema.rs:434-450)。
+"默认隐藏 + 热键唤出"需上游 feature 或自维护 patch, 未做 —— 提示纯属装饰,
+隐藏后按键功能不受影响。
 
 **状态栏构成** (tuigreet 0.11.1 `ui/mod.rs:225-287`, 全部默认显示):
 `ESC Reset` / `F2 Change command` (kb_command=2) / `F3 Choose session`
@@ -583,22 +590,29 @@ tuigreet (2026-09-16 注释只发现它影响不到用户会话, 这次确认连
 ```nix
 environment.etc."tuigreet/config.toml".text = ''
   [layout.widgets.status_bar]
-  show_command = false
-  show_session_status = false
+  show_reset = false            # ESC Reset
+  show_command = false          # F2 Change command
+  show_session = false          # F3 Choose session
+  show_power = false            # F12 Power
+  show_background = false       # F4 Background
+  show_session_status = false   # SESS Niri (当前会话读数)
 '';
 ```
 配置加载优先级: defaults → `/etc/tuigreet/config.toml` →
 `~/.config/tuigreet/config.toml` → `TUIGREET_*` 环境变量 → CLI 参数
-(`tuigreet-config/src/parser.rs:36`)。可用开关共 7 个: show_reset /
-show_command / show_session / show_power / show_background /
-show_session_status / show_caps_lock; `status_position = "hidden"` 整条隐藏。
+(`tuigreet-config/src/parser.rs:36`)。可用开关共 7 个 (上表 6 个 +
+show_caps_lock, 本机保留其默认 true 即右侧大写锁定指示);
+`status_position = "hidden"` 整条隐藏 (含 CAPS LOCK, 未用)。
 **注意热重载只在「进程启动时配置文件已存在」才启用** (`watcher.rs:83`),
 启动后才出现的文件对运行中的 greeter 不可见, 需 respawn。
 
 **验证**: ① `nix eval` etc 内容 ✓; ② 用 tuigreet 自带 `--config` 旗标喂真实
 解析器: 正确配置通过 schema 校验 (走到预期的 `GREETD_SOCK must be defined`),
 篡改 `show_command = "bogus"` 报 `invalid type` 且精确指向键名 —— 证明键真被
-读取而非静默忽略 ✓; ③ restart greetd 换新 greeter 后目测状态栏无 F2/SESS ✓。
+读取而非静默忽略 ✓; ③ restart greetd 换新 greeter 后目测状态栏无 F2/SESS ✓;
+④ **配置热重载实测**: 后续两次改 `show_*` 开关 rebuild, 运行中的 greeter 进程
+(pid 未变、未重启 greetd) 状态栏即时刷新 —— `watcher.rs` 的热重载链路真实可用
+(前提: 进程启动时配置文件已存在)。
 
 **附带发现**:
 - **`systemctl restart greetd` 不会杀用户会话** —— 用户 niri 在 logind 独立
