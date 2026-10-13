@@ -621,3 +621,39 @@ show_caps_lock, 本机保留其默认 true 即右侧大写锁定指示);
   判断是错的。
 - **greetd.nix 过时注释修正**: "F2 可切换会话" → 实际 F2=手输命令、
   F3=会话列表 (greeter.rs:219-220 默认键位, 与屏上所见一致)。
+
+2026-10-13 win11 虚拟机: 宿主↔guest 剪贴板/分辨率修复 + WebDAV 文件共享的不可修判定 ——
+
+**背景**: win11 (libvirt) 的三项诉求 —— 剪贴板双向 / 分辨率自适应 / 文件共享。
+
+**剪贴板 + 分辨率 (已交付)**:
+- 根因: guest 缺 **spice-vdagent** (`com.redhat.spice.0` 通道 state=disconnected) ——
+  SPICE 的剪贴板共享与动态分辨率都靠它, 两个问题同源;
+- 修复: guest 安装 **spice-guest-tools** (官方 latest = 2018 版, 含 vdagent +
+  QXL + vioserial + balloon; **注意不含 webdavd**) → 重启 guest → 通道 connected
+  → 剪贴板双向 ✓ + virt-manager 的 `View → Scale Display → Auto resize` 生效 ✓。
+- **传安装包进 guest 的"挂载法"** (scp 之外的通路): 宿主下载 → `xorriso -as mkisofs`
+  做 ISO → 放 ventory U 盘 (`/run/media/wbb/D/wbb/`) → `virsh change-media win11
+  sdb <iso> --update` **热换光驱** → guest 里从光驱安装。为什么放 U 盘: QEMU 读不了
+  /home/wbb (700), U 盘挂载点 (root 属、可读) 是已验证可用的中转。
+
+**WebDAV 文件共享 (结论: 不可修, 记录以免重蹈)**:
+- 全链路本可通: virt-manager/virtinst 的官方通道名 = `org.spice-space.webdav.0`
+  (源码实锤 `devices/char.py`); 加 `spiceport` 通道 (**不支持热插** —— 报
+  "Hotplug unsupported for char device type 'spiceport'", 需 `--config` + VM 完整
+  关机重开); guest 装 **spice-webdavd-x64-2.4.msi** (独立于 guest-tools 的包,
+  官网 Other packages 栏)。
+- 崩溃侦察链 (全有价值, 但最终死路):
+  1. 服务 Running 却不开端口 → `Restart-Service` 后 9843 恢复监听 —— **启动时序**:
+     服务先于 vioser 设备就绪, 首次失败不重试 (对策 `sc.exe config spice-webdavd
+     start= delayed-auto`, 未及验证);
+  2. `net use` 报**系统错误 67** → 另一依赖: Windows 的 **WebClient** 服务被公司
+     安全基线禁用 → 启用后服务能维持一阵;
+  3. **最终服务反复崩溃**, WER 实锤: `spice-webdavd.exe` 在**自带
+     libglib-2.0-0.dll (2.58.3.0)** 中 `0xc0000005 @ 0x4e478` —— **每次崩溃偏移
+     完全相同 (确定性, 代码级 bug, 与安全软件无关)**; 上游 2024-07 有同款 Win11
+     报告 (spice-devel 邮件列表 "spice-webdavd service fails to start on
+     Windows 11 guest in GNOME boxes") 至今无修复。
+- **结论: Win11 guest 上不要再折腾 spice-webdavd**; 文件传输用 **scp**
+  (guest→宿主 `192.168.122.1:22`, 22 全局放行; 图形化可上 WinSCP)。XML 里的
+  webdav 通道保留 (无害; 上游修好即可直接用)。
