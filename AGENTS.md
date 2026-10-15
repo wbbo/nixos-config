@@ -657,3 +657,47 @@ show_caps_lock, 本机保留其默认 true 即右侧大写锁定指示);
 - **结论: Win11 guest 上不要再折腾 spice-webdavd**; 文件传输用 **scp**
   (guest→宿主 `192.168.122.1:22`, 22 全局放行; 图形化可上 WinSCP)。XML 里的
   webdav 通道保留 (无害; 上游修好即可直接用)。
+
+2026-10-15 光标换用 Catppuccin Latte×Light —— 「光标三条链」机制定位与 GTK 缺口修复 ——
+
+**背景**: 用户要求换光标 (bibata-cursors → catppuccin-cursors)。过程中暴露: 本仓
+光标主题由**三条独立链路**共同决定, **必须四处同值**, 缺一即"双光标并存"或静默
+fallback:
+
+| 链路 | 管谁 | 位置 |
+|------|------|------|
+| niri config.kdl `cursor{ xcursor-theme }` | **桌面/合成器光标 (真源)** | `modules/home/niri/config.kdl` |
+| `XCURSOR_THEME` 环境变量 | 非 GTK 的 Wayland 应用 (kitty/Qt 等) | `modules/nixos/desktop.nix` |
+| gsettings `…interface.cursor-theme` | **GTK 应用** (Nautilus/Firefox 等) | `modules/home/default.nix` (dconf) |
+| 包输出 | 主题资产本体 | `modules/nixos/packages.nix` (`catppuccin-cursors.<变体>`) |
+
+**关键机制 (源码级)**:
+- **niri 桌面光标不读 `XCURSOR_THEME` 环境变量**, 只认 config.kdl (`cursor.rs`:
+  `CursorManager::new(&config.cursor.xcursor_theme, …)`); 且启动/重载时用该值
+  **反向覆盖**子进程的 `XCURSOR_THEME` (`ensure_env`) —— config.kdl 才是真源。
+  主题名失效时 niri **静默落到内建 fallback 光标** (`resources/cursor.rgba`,
+  实测深色像素 95% = "黑箭头+白轮廓"), 不报任何错、日志无痕。
+- **GTK on Wayland 不读 `XCURSOR_THEME`**, 只认 gsettings `cursor-theme`;
+  未设 → Adwaita (实测 left_ptr 深色 54%, 同为黑箭头白轮廓)。修复走
+  `dconf.settings` 而**非** HM `gtk` 模块 —— `~/.config/gtk-3.0/settings.ini`
+  是 Noctalia 管的实体文件, `gtk.enable` 会撞 clobber (本仓已知雷型)。
+- 验证手法 (本次自建): `/dev/vcs1` 直读 tty 屏幕; xcursor 二进制逐像素解析
+  (主体/描边色占比, 判定主题是否真的加载); `grim -c` 截图+模板匹配在视频壁纸
+  场景信噪比差, 已弃用。
+
+**过程中的翻车 (记录在案)**:
+1. 第一步只改 `XCURSOR_THEME`+包 → 漏 config.kdl 与 GTK dconf → 屏幕上的仍是
+   fallback 黑箭头 (niri 反手用旧主题名覆盖了环境变量);
+2. 补 config.kdl 时用 `#` 写 KDL 注释 → **整份 config 解析失败, niri 静默保留
+   旧配置** (journal 可见 `error parsing KDL`), 光标当然没变。KDL 注释是
+   `//`。与"KDL v2 无分号"同族陷阱 (见 memory)。
+
+**最终选型**: Catppuccin **Latte × Light** —— 主体 `#eff1f5` (近纯白) + 灰蓝
+描边 (`#6d7083` 系)。试用历程 Mocha×Rosewater (`#f5e0dc` 浅粉, 观感偏粉) →
+Mocha×Light (`#cdd6f4` 中性) → Mauve → Latte×Light (近白, 用户终选)。
+包结构: `catppuccin-cursors` 单包 **64 变体** (4 flavor × 16 色), **输出名驼峰**
+(`latteLight`) 而**主题目录名全小写连字符** (`catppuccin-latte-light-cursors`),
+四处引用拼写不同, 换主题时逐个核对。
+
+**换主题操作清单**: 上述四处同改 → `./build.sh`。niri 经 config 热重载**即时**
+生效 (桌面光标无需重启), GTK 应用新开窗口生效, 非 GTK 应用注销重登或重启该应用。

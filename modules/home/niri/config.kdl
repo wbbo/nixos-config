@@ -43,7 +43,14 @@ environment {
 
 // ================ 光标 ================
 cursor {
-    xcursor-theme "Bibata-Modern-Ice"
+    // 主题目录名, 与 modules/nixos/desktop.nix 的 XCURSOR_THEME 同值,
+    // 包来自 packages.nix (catppuccin-cursors.latteLight)。
+    // 注意: niri 的桌面光标只认这里, **不读环境变量**; 且启动后会用此值反向
+    // 覆盖子进程的 XCURSOR_THEME (cursor.rs ensure_env) —— 这才是光标的
+    // 单一真源, 两处必须一致。主题名失效时 niri 落到内建 fallback 光标
+    // (黑箭头白轮廓), 不会报错 —— 换主题名后若观感不对先核对这里。
+    // (KDL 注释是 //, 不是 # —— 曾因此整份 config 解析失败静默回退旧配置)
+    xcursor-theme "catppuccin-latte-light-cursors"
     xcursor-size 24
 }
 

@@ -76,7 +76,14 @@
 
     ### 美化 / 状态
     starship
-    bibata-cursors
+    # 光标: Catppuccin Latte × Light —— 主体/描边取自 Latte 浅色调色板
+    # (Latte 是 4 flavor 中唯一的浅色系, 描边为近白 base, 与 Mocha 系的
+    # 深描边明暗相反; 曾试 Mocha × Rosewater/Light/Mauve)。
+    # 造型基于 Volantes (小而轻的扁平简约系)。
+    # 注意包名 (驼峰变体输出) 与 XCURSOR_THEME 主题目录名 (全小写连字符,
+    # desktop.nix / niri config.kdl / home dconf 三处同名) 拼写不同:
+    # latteLight ↔ catppuccin-latte-light-cursors。
+    catppuccin-cursors.latteLight
 
     ### 文件管理
     # Nautilus override: 把 nautilus-python 加载器软链进**它自己的**扩展目录。

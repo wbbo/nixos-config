@@ -46,6 +46,17 @@
     stateVersion = "26.05";
   };
 
+  # GTK 应用光标主题 —— 与系统 XCURSOR_THEME (modules/nixos/desktop.nix) /
+  # niri config.kdl cursor{} 同值。
+  # 为什么要有这处: GTK on Wayland **不读 XCURSOR_THEME 环境变量**, 只认
+  # gsettings org.gnome.desktop.interface.cursor-theme, 未设时回退默认 Adwaita
+  # (黑箭头+白轮廓) —— 曾导致 kitty 与 GTK 应用 双光标并存。
+  # 走 dconf.settings 而非 HM gtk 模块: ~/.config/gtk-3.0/settings.ini 是
+  # Noctalia 管的实体文件, 启用 gtk.enable 会撞 clobber (本仓已知雷型)。
+  # 生效: 新开的 GTK 窗口即用; 已开窗口不热切。
+  dconf.settings."org/gnome/desktop/interface"."cursor-theme" =
+    "catppuccin-latte-light-cursors";
+
   # ── 用户会话语言 (D-Bus 激活路径) ──────────────────────────────────
   # 必须**在 import-environment 之后**再设一次, 否则会被它覆盖。
   #

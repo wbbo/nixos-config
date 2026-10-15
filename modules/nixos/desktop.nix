@@ -89,7 +89,10 @@
     # 初始化不顺就直接失败而非降级。Steam 日志里有明确警告:
     #   SDL_VIDEODRIVER='wayland' does not allow fallback, use 'wayland,x11'
     SDL_VIDEODRIVER = "wayland,x11";
-    XCURSOR_THEME = "Bibata-Modern-Ice";
+    # 光标主题 (值 = 主题目录名, 对应 packages.nix 的
+    # catppuccin-cursors.latteLight; 与 niri config.kdl cursor{}/home dconf
+    # cursor-theme 三处必须同值 —— 各链路详见各处注释)
+    XCURSOR_THEME = "catppuccin-latte-light-cursors";
     XCURSOR_SIZE = "24";
   };
 
