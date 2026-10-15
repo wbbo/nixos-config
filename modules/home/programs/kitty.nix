@@ -49,6 +49,21 @@
     # 壁纸变化时 Noctalia 重新渲染 + 内置 apply.sh 发 SIGUSR1 重载 kitty。
     # 注意: include 已声明在配置中, apply.sh 检测到存在即跳过 mv (不破坏 home-manager symlink)。
     extraConfig = ''
+      # 【2026-10-15】符号回退 + kitty 格数规则 (源码级实测):
+      # Maple Mono NF CN 缺 ①②③(U+2460-24FF) 与 ★☆(U+2605-2606) 字形, 显式
+      # 映射到 Noto Sans Mono CJK SC —— 全角设计 (圈/星墨迹 93% em, 与汉字同级)。
+      # 但屏幕上多大还会被 **kitty 的格数分配**二次限制 (fonts.c:2235 分支,
+      # 仅对"非主字体 + category=So 符号"或 PUA 生效):
+      #   - ①②③ category=No, 恒占 1 格 → 缩放至 ~63% em, 相对汉字(2 格)显小。
+      #     无解: kitty 只有 narrow_symbols 可收窄, 没有加宽选项; 换任何字体
+      #     都一样 (DejaVu/Unifont 的星/圈更小, 16px 下墨迹近零)。
+      #   - ★☆ category=So: **后跟空格**时吸收空格按 2 格原尺寸渲染 (饱满);
+      #     后跟非空格时只能 1 格 → 缩放 ~63%。故 "★☆" 相邻时 ★ 显小、
+      #     "★ ☆" 则等大 —— 是特性而非缺陷。想求恒一可用
+      #     `narrow_symbols U+2605-U+2606` 强制 1 格 (已评估, 选择保持现状)。
+      symbol_map U+2460-U+24FF Noto Sans Mono CJK SC
+      symbol_map U+2605-U+2606 Noto Sans Mono CJK SC
+
       include themes/noctalia.conf
     '';
   };
