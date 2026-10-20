@@ -94,15 +94,17 @@
       ".config/mozilla"
       # Flatpak 应用数据 (系统级装 /var/lib/flatpak 跨 rebuild 天然保留, 但
       # ~/.var/app/<app> 在 @root 属家目录需显式持久化):
-      # - com.usebottles.bottles: Bottles wineprefix + 下载的 runner/组件
-      #   (wineprefix 内含已装 Windows 应用, 无法重建, 必须持久化)
+      # 注: com.usebottles.bottles (7.1G) 不再走 impermanence —— 由
+      # modules/nixos/data-disk.nix 的 bottles-data 服务在启动时判断:
+      # 有数据盘挂 /data/bottles, 无盘回退 /persist/home/<user>/.var/app/...
+      # 两种都是持久化。用 bind 而非符号链接: flatpak 沙盒解析该路径时拒绝
+      # 绝对符号链接 (bubblewrap RESOLVE_BENEATH), bind mount 对沙盒透明。
       # - com.tencent.WeChat: 微信聊天记录/登录态 (~300M)
       # - io.typora.Typora: Markdown 编辑器 (偏好设置/授权/最近文件)
       # - md.obsidian.Obsidian: 笔记应用 (应用配置/插件/索引; vault 本体
       #   在用户自选路径, 该路径是否持久化需另行确认)
       # - com.obsproject.Studio: 场景集合/配置文件/输出设置
       #   (录屏输出统一落在 ~/Videos/record, 该目录已随 Videos 持久化)
-      ".var/app/com.usebottles.bottles"
       ".var/app/com.tencent.WeChat"
       ".var/app/io.typora.Typora"
       ".var/app/md.obsidian.Obsidian"
