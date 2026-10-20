@@ -135,8 +135,7 @@
     fd            # find 替代
     ripgrep       # grep 替代
     btop          # 系统监视器
-    htop          # 系统监视器 (替代 top, 无粗体中文表头发虚问题)
-    fastfetch     # 系统信息(替代 neofetch)
+    fastfetch     # 系统信息
     unzip
     gzip
     playerctl     # 媒体键控制

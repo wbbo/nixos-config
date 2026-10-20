@@ -4,7 +4,7 @@
   programs.kitty = {
     enable = true;
     settings = {
-      # Maple Mono: 等宽 + Nerd 图标 + CJK (反白表头发虚为渲染层面, 用 htop 规避)
+      # Maple Mono: 等宽 + Nerd 图标 + CJK (粗体中文表头发虚属渲染层面, 与字体选择无关)
       font_family = "Maple Mono NF CN";
       bold_font = "auto";
       italic_font = "auto";
