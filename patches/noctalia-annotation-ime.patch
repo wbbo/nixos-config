@@ -1,8 +1,8 @@
 diff --git a/src/app/application.h b/src/app/application.h
-index f9904c6..e3a1ccd 100644
+index c658414..ca5e0f9 100644
 --- a/src/app/application.h
 +++ b/src/app/application.h
-@@ -264,7 +264,8 @@ private:
+@@ -296,7 +296,8 @@ private:
    DependencyService m_dependencyService;
    GammaService m_gammaService;
    ScreenshotService m_screenshotService{
@@ -41,18 +41,18 @@ index 3a552fc..0109ff6 100644
  
    struct AnnotationRect {
 diff --git a/src/capture/annotation_overlay.cpp b/src/capture/annotation_overlay.cpp
-index d0fe592..e61cb69 100644
+index a1bc313..05558fb 100644
 --- a/src/capture/annotation_overlay.cpp
 +++ b/src/capture/annotation_overlay.cpp
-@@ -29,6 +29,7 @@
- #include "ui/palette.h"
+@@ -33,6 +33,7 @@
  #include "ui/style.h"
+ #include "util/string_utils.h"
  #include "wayland/layer_surface.h"
 +#include "wayland/text_input_service.h"
  #include "wayland/wayland_connection.h"
  #include "wayland/wayland_seat.h"
  
-@@ -152,6 +153,34 @@ namespace capture {
+@@ -279,6 +280,34 @@ namespace capture {
        cairo_restore(cr);
      }
  
@@ -87,8 +87,8 @@ index d0fe592..e61cb69 100644
      [[nodiscard]] bool isFreehandTool(AnnotationTool tool) {
        return tool == AnnotationTool::Brush || tool == AnnotationTool::Highlighter;
      }
-@@ -255,6 +284,48 @@ namespace capture {
-       }
+@@ -429,6 +458,48 @@ namespace capture {
+       return AnnotationFillMode::Off;
      }
  
 +    // Drops up to `bytes` bytes from the end of `text`, never splitting a UTF-8 sequence.
@@ -136,7 +136,7 @@ index d0fe592..e61cb69 100644
    } // namespace
  
    AnnotationToolState defaultAnnotationToolState() {
-@@ -341,6 +412,185 @@ namespace capture {
+@@ -563,6 +634,185 @@ namespace capture {
      m_renderContext = renderContext;
    }
  
@@ -322,7 +322,7 @@ index d0fe592..e61cb69 100644
    void AnnotationOverlay::setExportCallback(ExportCallback callback) { m_onExport = std::move(callback); }
  
    void AnnotationOverlay::setFreezeCallback(FreezeCallback callback) { m_onFreeze = std::move(callback); }
-@@ -385,6 +635,12 @@ namespace capture {
+@@ -616,6 +866,12 @@ namespace capture {
  
    void AnnotationOverlay::setCursorVisible(bool visible) { m_cursorVisible = visible; }
  
@@ -335,15 +335,15 @@ index d0fe592..e61cb69 100644
    bool AnnotationOverlay::cursorVisible() const noexcept {
      if (m_mode == AnnotationMode::Image) {
        return m_image.canToggleCursor() ? m_cursorVisible : m_image.cursorVisible;
-@@ -460,6 +716,7 @@ namespace capture {
+@@ -691,6 +947,7 @@ namespace capture {
      m_gestureInstance = nullptr;
      m_moveIndex.reset();
      m_cropDragging = false;
 +    endTextInput();
      m_textInstance = nullptr;
      m_textIndex.reset();
-     destroySurfaces();
-@@ -570,6 +827,10 @@ namespace capture {
+     m_strokePanelOpen = false;
+@@ -806,6 +1063,10 @@ namespace capture {
    }
  
    void AnnotationOverlay::destroySurfaces() {
@@ -354,7 +354,7 @@ index d0fe592..e61cb69 100644
      // A gesture cut short by the teardown (Freeze mid-drag, an output going away) has a
      // snapshot pushed and a half-drawn annotation appended; roll it back rather than leave the
      // document with an interaction nobody can close.
-@@ -1577,12 +1838,14 @@ namespace capture {
+@@ -1801,12 +2062,14 @@ namespace capture {
          cairo_scale(cr, inst.canvasScale, inst.canvasScale);
          renderAnnotation(cr, *target, inst.backgroundSurface, inst.canvasScale);
          if (editingText) {
@@ -372,7 +372,7 @@ index d0fe592..e61cb69 100644
            );
          }
          cairo_restore(cr);
-@@ -1612,10 +1875,25 @@ namespace capture {
+@@ -1836,10 +2099,25 @@ namespace capture {
        if (surface == nullptr || !texture.valid()) {
          return;
        }
@@ -402,7 +402,7 @@ index d0fe592..e61cb69 100644
        if (width <= 0 || height <= 0) {
          return;
        }
-@@ -1839,10 +2117,14 @@ namespace capture {
+@@ -2069,10 +2347,14 @@ namespace capture {
                .fill = AnnotationColor{.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 0.0F},
                .points = {point},
                .text = {},
@@ -417,7 +417,7 @@ index d0fe592..e61cb69 100644
        redrawActive(inst);
        break;
      }
-@@ -2036,8 +2318,12 @@ namespace capture {
+@@ -2269,8 +2551,12 @@ namespace capture {
      Instance& inst = *m_textInstance;
      AnnotationDocument& doc = documentFor(inst);
      Annotation* target = doc.active();
@@ -430,7 +430,7 @@ index d0fe592..e61cb69 100644
      m_textIndex.reset();
      m_textInstance = nullptr;
      if (discard) {
-@@ -2061,6 +2347,7 @@ namespace capture {
+@@ -2294,6 +2580,7 @@ namespace capture {
      }
      Instance& inst = *m_textInstance;
      AnnotationDocument& doc = documentFor(inst);
@@ -438,7 +438,33 @@ index d0fe592..e61cb69 100644
      m_textIndex.reset();
      m_textInstance = nullptr;
      doc.discardInteraction();
-@@ -2094,14 +2381,14 @@ namespace capture {
+@@ -2319,6 +2606,25 @@ namespace capture {
+       return true;
+     }
+ 
++    // Ctrl+C / Ctrl+S keep working while typing: commit the text first, then run the
++    // global action. Without this the key is swallowed mid-edit, and its control
++    // character can even leak into the string via applyTypedKey (garbled glyphs).
++    if (KeybindMatcher::matches(KeybindAction::Copy, event.sym, event.modifiers)) {
++      commitTextEdit();
++      requestExport(AnnotationExport::Copy);
++      return true;
++    }
++    if (KeybindMatcher::matches(KeybindAction::Save, event.sym, event.modifiers)) {
++      commitTextEdit();
++      requestExport(AnnotationExport::Save);
++      return true;
++    }
++    // Modifier combos never type: keep control characters (Ctrl+C = 0x03, ...) out of
++    // the text buffer.
++    if ((event.modifiers & (KeyMod::Ctrl | KeyMod::Alt | KeyMod::Super)) != 0) {
++      return true;
++    }
++
+     Instance& inst = *m_textInstance;
+     AnnotationDocument& doc = documentFor(inst);
+     Annotation* target = doc.active();
+@@ -2327,14 +2633,14 @@ namespace capture {
        return true;
      }
  
@@ -458,7 +484,7 @@ index d0fe592..e61cb69 100644
      doc.touch();
      inst.renderedGeneration = doc.generation();
      redrawActive(inst);
-@@ -2280,6 +2567,8 @@ namespace capture {
+@@ -2556,6 +2862,8 @@ namespace capture {
      const std::size_t index = toolIndex(AnnotationTool::Text);
      target->width = m_tools.width[index];
      target->stroke = m_tools.color[index];
@@ -468,18 +494,18 @@ index d0fe592..e61cb69 100644
      inst.renderedGeneration = doc.generation();
      redrawActive(inst);
 diff --git a/src/capture/annotation_overlay.h b/src/capture/annotation_overlay.h
-index e70ed60..94190bd 100644
+index c717862..f2e15f7 100644
 --- a/src/capture/annotation_overlay.h
 +++ b/src/capture/annotation_overlay.h
-@@ -2,6 +2,7 @@
- 
+@@ -3,6 +3,7 @@
  #include "capture/annotation_document.h"
+ #include "capture/screenshot_backdrop.h"
  #include "capture/screenshot_image.h"
 +#include "ui/text_input_client.h"
  
  #include <array>
  #include <cstdint>
-@@ -16,6 +17,7 @@
+@@ -17,6 +18,7 @@
  class Flex;
  class Renderer;
  class RenderContext;
@@ -487,16 +513,16 @@ index e70ed60..94190bd 100644
  class WaylandConnection;
  struct KeyboardEvent;
  struct PointerEvent;
-@@ -51,7 +53,7 @@ namespace capture {
- 
-   [[nodiscard]] AnnotationToolState defaultAnnotationToolState();
+@@ -60,7 +62,7 @@ namespace capture {
+   [[nodiscard]] std::string_view annotationFillModeName(AnnotationFillMode mode) noexcept;
+   [[nodiscard]] std::optional<AnnotationFillMode> annotationFillModeFromName(std::string_view name) noexcept;
  
 -  class AnnotationOverlay {
 +  class AnnotationOverlay : public TextInputClient {
    public:
      using ExportCallback = std::function<void(ScreencopyImage image, AnnotationExport action)>;
      using FreezeCallback = std::function<void()>;
-@@ -65,6 +67,10 @@ namespace capture {
+@@ -77,6 +79,10 @@ namespace capture {
      ~AnnotationOverlay();
  
      void initialize(WaylandConnection& wayland, RenderContext* renderContext);
@@ -507,9 +533,9 @@ index e70ed60..94190bd 100644
      void setExportCallback(ExportCallback callback);
      void setFreezeCallback(FreezeCallback callback);
      void setCaptureRegionCallback(CaptureRegionCallback callback);
-@@ -81,6 +87,10 @@ namespace capture {
-     void setCursorVisible(bool visible);
+@@ -101,6 +107,10 @@ namespace capture {
      [[nodiscard]] bool cursorVisible() const noexcept;
+     void setCopyOnClose(bool copy) noexcept { m_copyOnClose = copy; }
  
 +    // Typeface for annotation text (shell.font_family). Applied to the rasterizer, which is
 +    // what draws the Text tool — and the live IME pre-edit rendered with it.
@@ -518,7 +544,7 @@ index e70ed60..94190bd 100644
      void begin();
      void beginImage(ScreenshotImage image, wl_output* target);
      // Drops the surfaces so a screencopy frame cannot contain the overlay; documents survive.
-@@ -139,6 +149,18 @@ namespace capture {
+@@ -169,6 +179,18 @@ namespace capture {
      [[nodiscard]] bool handleTextKey(const KeyboardEvent& event);
      [[nodiscard]] bool handleToolKey(std::uint32_t sym);
  
@@ -537,7 +563,7 @@ index e70ed60..94190bd 100644
      void selectTool(AnnotationTool tool);
      void setToolColor(AnnotationColor color);
      void adjustToolWidth(double delta);
-@@ -190,6 +212,10 @@ namespace capture {
+@@ -223,6 +245,10 @@ namespace capture {
      Instance* m_textInstance = nullptr;
      std::optional<std::size_t> m_textIndex;
  
@@ -782,10 +808,10 @@ index e965ea1..1130528 100644
    [[nodiscard]] cairo_surface_t* frozenToCairo(const ScreencopyImage& image);
  
 diff --git a/src/capture/screenshot_service.cpp b/src/capture/screenshot_service.cpp
-index 5f5c4c6..ec3c363 100644
+index f4148d0..7c3535a 100644
 --- a/src/capture/screenshot_service.cpp
 +++ b/src/capture/screenshot_service.cpp
-@@ -613,10 +613,10 @@ namespace {
+@@ -773,10 +773,10 @@ std::expected<ScreenshotIpcRequest, std::string> parseScreenshotIpcRequest(
  
  ScreenshotService::ScreenshotService(
      WaylandConnection& wayland, CompositorPlatform& platform, ConfigService& configService,
@@ -793,12 +819,12 @@ index 5f5c4c6..ec3c363 100644
 +    NotificationManager& notifications, ClipboardService* clipboard, TextInputService* textInputService
  )
      : m_wayland(wayland), m_platform(platform), m_notifications(notifications), m_configService(configService),
--      m_clipboard(clipboard), m_capture(wayland) {}
-+      m_clipboard(clipboard), m_textInputService(textInputService), m_capture(wayland) {}
+-      m_clipboard(clipboard), m_capture(wayland), m_toplevelCapture(wayland) {}
++      m_clipboard(clipboard), m_textInputService(textInputService), m_capture(wayland), m_toplevelCapture(wayland) {}
  
  ScreenshotService::~ScreenshotService() = default;
  
-@@ -1215,6 +1215,10 @@ void ScreenshotService::ensureAnnotationOverlay() {
+@@ -1519,6 +1519,10 @@ void ScreenshotService::ensureAnnotationOverlay() {
      m_annotationOverlay = std::make_unique<capture::AnnotationOverlay>();
    }
    m_annotationOverlay->initialize(m_wayland, m_regionRenderContext);
@@ -810,18 +836,18 @@ index 5f5c4c6..ec3c363 100644
      persistAnnotationToolState(key, value);
    });
 diff --git a/src/capture/screenshot_service.h b/src/capture/screenshot_service.h
-index e291340..aad3513 100644
+index 41f3329..4c98831 100644
 --- a/src/capture/screenshot_service.h
 +++ b/src/capture/screenshot_service.h
-@@ -18,6 +18,7 @@ class CompositorPlatform;
+@@ -21,6 +21,7 @@ class CompositorPlatform;
  class ConfigService;
  class IpcService;
  class NotificationManager;
 +class TextInputService;
- struct Config;
  class RenderContext;
  class WaylandConnection;
-@@ -43,7 +44,8 @@ public:
+ class SoundPlayer;
+@@ -60,7 +61,8 @@ public:
  
    ScreenshotService(
        WaylandConnection& wayland, CompositorPlatform& platform, ConfigService& configService,
@@ -831,12 +857,12 @@ index e291340..aad3513 100644
    );
    ~ScreenshotService();
  
-@@ -184,6 +186,8 @@ private:
+@@ -214,6 +216,8 @@ private:
    NotificationManager& m_notifications;
    ConfigService& m_configService;
    ClipboardService* m_clipboard = nullptr;
 +  // Shared IME service, forwarded to the annotation overlay so composed text works.
 +  TextInputService* m_textInputService = nullptr;
    ScreenshotCapture m_capture;
+   ToplevelThumbnailCapture m_toplevelCapture;
    std::unique_ptr<capture::ScreenshotRegionOverlay> m_regionOverlay;
-   std::vector<PendingCapture> m_captureQueue;
