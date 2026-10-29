@@ -21,16 +21,16 @@
 let
   pigma = pkgs.rustPlatform.buildRustPackage {
     pname = "pigma";
-    version = "0.2.15";
+    version = "0.2.16";
 
     src = pkgs.fetchFromGitHub {
       owner = "akirco";
       repo = "pigma";
-      rev = "v0.2.15";
+      rev = "v0.2.16";
       # FOD 输出路径由该 hash 决定: 喂旧 hash 时 store/缓存里同名 outPath 直接
       # 替换旧源码 (不重新拉取), 构建"看似正常"实为旧文件 —— 换 rev 必须同步
       # 换 hash (fakeHash 试错拿 got: 值); 2026-09-25 切 fork 实测踩坑
-      hash = "sha256-/jlT6OKm3KCXY3DxQ30CXxClt5qMoc89Ce7hB4SNwks=";
+      hash = "sha256-Y543X/vChW+lBAEeSDtFFWOAKxaF2VEr9Z2dADeznBE=";
       # crates/y7dl 是 git submodule (sonar 的路径依赖), GitHub tarball
       # 不含 submodule, 缺它则 cargo 解析 sonar 依赖时报 ENOENT
       # (上游指向 akirco/y7dl, v0.2.15 已含同款 TOML 修复)
@@ -42,7 +42,7 @@ let
       rm .cargo/config.toml
     '';
 
-    cargoHash = "sha256-v/pbPt9FTYctsNSw1AptLhZxanNmJF0AdajaPiCLrv4=";
+    cargoHash = "sha256-2xwwhmG2bVh7fmG6mfqPHgCtbUd+DGOn+8uNjcioBho=";
 
     nativeBuildInputs = [ pkgs.pkg-config ];
     buildInputs = [ pkgs.alsa-lib ];
